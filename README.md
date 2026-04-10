@@ -1,6 +1,6 @@
 # eks-platform-openclaw
 
-OpenClaw AI agents on Amazon EKS Auto Mode with Kata container isolation, Claude via AWS Bedrock, and GitOps via EKS Capability for Argo CD.
+OpenClaw AI agents on Amazon EKS Auto Mode with Kata container isolation, Claude via AWS Bedrock, GitOps via EKS Capability for Argo CD, and Bedrock Guardrail content filtering.
 
 ![Architecture](generated-diagrams/openclaw-architecture.png)
 
