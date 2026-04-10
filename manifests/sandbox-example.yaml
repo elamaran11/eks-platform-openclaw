@@ -1,0 +1,45 @@
+apiVersion: agents.x-k8s.io/v1alpha1
+kind: Sandbox
+metadata:
+  name: openclaw-slack-example
+  namespace: openclaw
+spec:
+  # VM-level isolation via Kata containers on bare-metal nodes
+  runtimeClassName: kata-qemu
+  tolerations:
+    - key: kata
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+  nodeSelector:
+    katacontainers.io/kata-runtime: "true"
+
+  # LiteLLM proxy — routes to Claude via Bedrock
+  llm:
+    endpoint: http://litellm.litellm.svc.cluster.local:4000
+    # API key injected from openclaw-config ConfigMap
+    apiKeySecretRef:
+      name: openclaw-config
+      key: litellm_api_key
+    model: bedrock/us.anthropic.claude-sonnet-4-6-20251001-v1:0
+    contextWindow: 200000
+
+  # Slack integration
+  channels:
+    - type: slack
+      config:
+        botToken: "xoxb-YOUR-BOT-TOKEN"
+        appToken: "xapp-YOUR-APP-TOKEN"
+        signingSecret: "YOUR-SIGNING-SECRET"
+
+  # Persistent workspace storage
+  storage:
+    size: 2Gi
+    storageClassName: gp2
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]

@@ -1,0 +1,10 @@
+instanceTypes:
+  - m5.metal
+  - m5d.metal
+  - c5.metal
+  - c5d.metal
+
+nodePool:
+  cpuLimit: "500"
+  memoryLimit: "500Gi"
+  consolidateAfter: 1m
