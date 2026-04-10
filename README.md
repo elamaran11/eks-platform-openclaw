@@ -4,19 +4,6 @@ OpenClaw AI agents on Amazon EKS Auto Mode with Kata container isolation, Claude
 
 ![Architecture](generated-diagrams/openclaw-architecture.png)
 
-## What's different from the original
-
-| Aspect | Original | This repo |
-|--------|-------------------------------------|-----------|
-| Add-ons | Manual: Karpenter, VPC CNI, EBS CSI, LB controller | EKS Auto Mode manages all |
-| Kata nodes | Karpenter `EC2NodeClass` | Auto Mode `EKSNodeClass` (built-in Karpenter) |
-| Pod Identity | Manual addon install | Built-in to Auto Mode |
-| GitOps | None (direct Helm releases) | EKS Capability for Argo CD (`aws_eks_capability`) |
-| Auth | `aws-auth` ConfigMap | EKS Access Entries API (CloudTrail auditable) |
-| Content filtering | None | Bedrock Guardrail (prompt injection, PII, harmful content) |
-| Alerting | None | Prometheus rules: Bedrock error rate, LiteLLM queue depth, Kata pool exhaustion |
-| Models | Qwen/SiliconFlow + Claude Opus 4.6 | Claude Sonnet 4.6, Opus 4.6, Haiku 4.5 via Bedrock |
-
 ## Architecture
 
 - **EKS Auto Mode** — `authentication_mode = "API"` with access entries; manages Karpenter, VPC CNI, EBS CSI, CoreDNS, LB controller, Pod Identity Agent
