@@ -6,7 +6,7 @@ OpenClaw AI agents on Amazon EKS Auto Mode with Kata container isolation, Claude
 
 ## What's different from the original
 
-| Aspect | Original (hitsub2/openclaw-on-eks) | This repo |
+| Aspect | Original | This repo |
 |--------|-------------------------------------|-----------|
 | Add-ons | Manual: Karpenter, VPC CNI, EBS CSI, LB controller | EKS Auto Mode manages all |
 | Kata nodes | Karpenter `EC2NodeClass` | Auto Mode `EKSNodeClass` (built-in Karpenter) |
