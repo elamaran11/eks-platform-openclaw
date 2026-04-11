@@ -60,6 +60,9 @@ litellm-helm:
   postgresql:
     enabled: false
 
+  migrations:
+    enabled: false
+
   serviceAccount:
     create: true
     name: litellm
