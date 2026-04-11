@@ -5,6 +5,7 @@ kube-prometheus-stack:
       storageSpec:
         volumeClaimTemplate:
           spec:
+            storageClassName: gp2
             accessModes: ["ReadWriteOnce"]
             resources:
               requests:
@@ -18,9 +19,10 @@ kube-prometheus-stack:
           memory: 4Gi
 
   grafana:
-    adminPassword: admin  # Change after deploy
+    adminPassword: admin
     persistence:
       enabled: true
+      storageClassName: gp2
       size: 10Gi
     sidecar:
       dashboards:
@@ -39,6 +41,7 @@ kube-prometheus-stack:
       storage:
         volumeClaimTemplate:
           spec:
+            storageClassName: gp2
             accessModes: ["ReadWriteOnce"]
             resources:
               requests:
