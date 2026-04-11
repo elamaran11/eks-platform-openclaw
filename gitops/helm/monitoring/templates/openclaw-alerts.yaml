@@ -22,7 +22,7 @@ spec:
             severity: warning
           annotations:
             summary: "Bedrock error rate above 5%"
-            description: "{{ $value | humanizePercentage }} of Bedrock requests are failing over the last 5 minutes."
+            description: "{{`{{ $value | humanizePercentage }}`}} of Bedrock requests are failing over the last 5 minutes."
 
         - alert: BedrockCriticalErrorRate
           expr: |
@@ -36,7 +36,7 @@ spec:
             severity: critical
           annotations:
             summary: "Bedrock error rate above 20%"
-            description: "{{ $value | humanizePercentage }} of Bedrock requests are failing — possible Bedrock service disruption or Guardrail misconfiguration."
+            description: "{{`{{ $value | humanizePercentage }}`}} of Bedrock requests are failing — possible Bedrock service disruption or Guardrail misconfiguration."
 
     - name: litellm
       interval: 30s
@@ -48,7 +48,7 @@ spec:
             severity: warning
           annotations:
             summary: "LiteLLM request queue depth is high"
-            description: "LiteLLM queue has {{ $value }} pending requests. Consider scaling replicas."
+            description: "LiteLLM queue has {{`{{ $value }}`}} pending requests. Consider scaling replicas."
 
         - alert: LiteLLMQueueDepthCritical
           expr: litellm_queue_size > 200
@@ -57,7 +57,7 @@ spec:
             severity: critical
           annotations:
             summary: "LiteLLM request queue critically backed up"
-            description: "LiteLLM queue has {{ $value }} pending requests. Agents may be timing out."
+            description: "LiteLLM queue has {{`{{ $value }}`}} pending requests. Agents may be timing out."
 
         - alert: LiteLLMDown
           expr: up{job="litellm"} == 0
@@ -82,7 +82,7 @@ spec:
             severity: warning
           annotations:
             summary: "Kata node pool has fewer than 20 allocatable CPUs remaining"
-            description: "Only {{ $value }} CPUs remain in the kata-bare-metal pool. New sandboxes may not schedule."
+            description: "Only {{`{{ $value }}`}} CPUs remain in the kata-bare-metal pool. New sandboxes may not schedule."
 
         - alert: KataNodePoolMemoryNearExhaustion
           expr: |
@@ -95,7 +95,7 @@ spec:
             severity: warning
           annotations:
             summary: "Kata node pool has fewer than 10Gi memory remaining"
-            description: "Only {{ $value | humanize1024 }}B of memory remains in the kata-bare-metal pool."
+            description: "Only {{`{{ $value | humanize1024 }}`}}B of memory remains in the kata-bare-metal pool."
 
         - alert: KataNodePoolAtCapacityLimit
           expr: |
@@ -107,4 +107,4 @@ spec:
             severity: critical
           annotations:
             summary: "Kata node pool is at 90%+ of its CPU limit"
-            description: "The kata-bare-metal NodePool is {{ $value | humanizePercentage }} full. Increase the CPU limit in kata-nodepool.yaml or new sandboxes will be unschedulable."
+            description: "The kata-bare-metal NodePool is {{`{{ $value | humanizePercentage }}`}} full. Increase the CPU limit in kata-nodepool.yaml or new sandboxes will be unschedulable."
