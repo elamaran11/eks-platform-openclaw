@@ -63,6 +63,11 @@ litellm-helm:
   migrations:
     enabled: false
 
+  # Override DATABASE_URL to prevent chart from constructing a postgresql URL
+  env:
+    - name: DATABASE_URL
+      value: "sqlite:///litellm.db"
+
   serviceAccount:
     create: true
     name: litellm
