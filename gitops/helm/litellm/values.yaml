@@ -48,7 +48,7 @@ litellm-helm:
 
   general_settings:
     default_model: claude-sonnet-4-6
-    store_model_in_db: true
+    store_model_in_db: false  # Use sqlite, no postgresql dependency
 
   litellm_settings:
     success_callback: ["prometheus"]
@@ -62,11 +62,6 @@ litellm-helm:
 
   migrations:
     enabled: false
-
-  # Override DATABASE_URL to prevent chart from constructing a postgresql URL
-  env:
-    - name: DATABASE_URL
-      value: "sqlite:///litellm.db"
 
   serviceAccount:
     create: true

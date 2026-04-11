@@ -30,3 +30,13 @@ module "vpc" {
 
   tags = local.tags
 }
+
+# EKS Auto Mode places nodes on intra subnets — add NAT route so they can pull images
+resource "aws_route" "intra_nat_gateway" {
+  count                  = length(module.vpc.intra_route_table_ids) > 0 ? 1 : 0
+  route_table_id         = module.vpc.intra_route_table_ids[0]
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = module.vpc.natgw_ids[0]
+
+  depends_on = [module.vpc]
+}
