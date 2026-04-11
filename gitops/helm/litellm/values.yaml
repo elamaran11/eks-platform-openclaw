@@ -55,7 +55,10 @@ litellm-helm:
     failure_callback: ["prometheus"]
     prometheus_url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
 
-  db_url: "sqlite:///litellm.db"  # Replace with RDS Aurora Serverless v2 for production
+  db_url: "sqlite:///litellm.db"
+
+  postgresql:
+    enabled: false
 
   serviceAccount:
     create: true
