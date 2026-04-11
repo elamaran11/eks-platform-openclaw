@@ -7,9 +7,5 @@ enable_kata_nodes = true
 # Required: Git repo ArgoCD watches for app-of-apps
 gitops_repo_url  = "https://github.com/YOUR_ORG/eks-platform-openclaw"
 
-# Required: AWS IAM Identity Center instance ARN
-# Find it: aws sso-admin list-instances --query 'Instances[0].InstanceArn' --output text
-idc_instance_arn = "arn:aws:sso:::instance/ssoins-XXXXXXXXXX"
-
 # Optional: additional IAM roles granted cluster-admin via access entries
 # admin_role_arns = ["arn:aws:iam::123456789012:role/my-admin-role"]

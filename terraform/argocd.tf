@@ -1,51 +1,22 @@
-# EKS Capability for Argo CD — AWS-native managed ArgoCD
-# https://docs.aws.amazon.com/eks/latest/userguide/argocd-concepts.html
-# Requires AWS IAM Identity Center (IDC) for authentication
+# ArgoCD via EKS Blueprints Addons — AWS-maintained bootstrap pattern
+# aws_eks_capability is not yet available in the Terraform AWS provider
 
-# IAM role the ArgoCD capability uses to interact with AWS services
-resource "aws_iam_role" "argocd_capability" {
-  name = "${local.cluster_name}-argocd-capability"
+module "eks_blueprints_addons" {
+  source  = "aws-ia/eks-blueprints-addons/aws"
+  version = "~> 1.0"
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "eks-capability.amazonaws.com"
-      }
-      Action = "sts:AssumeRole"
-    }]
-  })
+  cluster_name      = module.eks.cluster_name
+  cluster_endpoint  = module.eks.cluster_endpoint
+  cluster_version   = module.eks.cluster_version
+  oidc_provider_arn = module.eks.oidc_provider_arn
 
-  tags = local.tags
-}
-
-resource "aws_iam_role_policy_attachment" "argocd_capability" {
-  role       = aws_iam_role.argocd_capability.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-}
-
-# EKS Capability for Argo CD
-resource "aws_eks_capability" "argocd" {
-  capability_name           = "argocd"
-  cluster_name              = module.eks.cluster_name
-  type                      = "ARGOCD"
-  role_arn                  = aws_iam_role.argocd_capability.arn
-  delete_propagation_policy = "RETAIN"
-
-  configuration {
-    argo_cd {
-      namespace = "argocd"
-      aws_idc {
-        idc_instance_arn = var.idc_instance_arn
-        idc_region       = var.region
-      }
-    }
+  enable_argocd = true
+  argocd = {
+    namespace     = "argocd"
+    chart_version = "7.8.0"
   }
 
   tags = local.tags
-
-  depends_on = [module.eks]
 }
 
 # App-of-apps root Application — ArgoCD watches gitops/apps/ in the repo
@@ -75,5 +46,5 @@ resource "kubectl_manifest" "argocd_app_of_apps" {
           - CreateNamespace=true
   YAML
 
-  depends_on = [aws_eks_capability.argocd]
+  depends_on = [module.eks_blueprints_addons]
 }

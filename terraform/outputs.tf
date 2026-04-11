@@ -30,13 +30,8 @@ output "litellm_api_key" {
 }
 
 output "argocd_server_url" {
-  description = "ArgoCD server URL (EKS Capability for Argo CD)"
-  value       = aws_eks_capability.argocd.configuration[0].argo_cd[0].server_url
-}
-
-output "bedrock_guardrail_version" {
-  description = "Bedrock Guardrail version"
-  value       = aws_bedrock_guardrail_version.openclaw.version
+  description = "ArgoCD server URL"
+  value       = "https://localhost:8080 (via port-forward)"
 }
 
 output "argocd_access_cmd" {
@@ -52,11 +47,6 @@ output "grafana_access_cmd" {
 output "vpc_id" {
   description = "VPC ID"
   value       = module.vpc.vpc_id
-}
-
-output "bedrock_guardrail_id" {
-  description = "Bedrock Guardrail ID — stored in litellm-secrets for LiteLLM"
-  value       = aws_bedrock_guardrail.openclaw.guardrail_id
 }
 
 output "gitops_next_step" {

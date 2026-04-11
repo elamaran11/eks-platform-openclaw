@@ -62,8 +62,3 @@ variable "gitops_target_revision" {
   type        = string
   default     = "HEAD"
 }
-
-variable "idc_instance_arn" {
-  description = "AWS IAM Identity Center instance ARN — required for EKS Capability for Argo CD authentication"
-  type        = string
-}
