@@ -1,0 +1,12 @@
+kata-deploy:
+  nodeSelector:
+    katacontainers.io/kata-runtime: "true"
+  tolerations:
+    - key: kata
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+  shims:
+    disableAll: true
+    qemu:
+      enabled: true
