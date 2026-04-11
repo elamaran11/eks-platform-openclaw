@@ -22,6 +22,16 @@ spec:
       name: litellm-masterkey
       jsonPointers:
         - /data
+    - group: ""
+      kind: Secret
+      name: litellm-postgresql
+      jsonPointers:
+        - /data
+    - group: apps
+      kind: StatefulSet
+      name: litellm-postgresql
+      jsonPointers:
+        - /spec/volumeClaimTemplates
   syncPolicy:
     automated:
       prune: true
@@ -29,3 +39,4 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
