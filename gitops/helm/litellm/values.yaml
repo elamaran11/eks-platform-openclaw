@@ -59,6 +59,9 @@ litellm-helm:
 
   postgresql:
     enabled: false
+    primary:
+      persistence:
+        storageClass: ebs-gp3
 
   migrations:
     enabled: false

@@ -16,6 +16,12 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: litellm
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      name: litellm-masterkey
+      jsonPointers:
+        - /data
   syncPolicy:
     automated:
       prune: true
