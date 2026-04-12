@@ -9,8 +9,8 @@ spec:
         katacontainers.io/kata-runtime: "true"
     spec:
       nodeClassRef:
-        group: eks.amazonaws.com
-        kind: NodeClass
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
         name: kata-bare-metal
       requirements:
         - key: karpenter.sh/capacity-type
