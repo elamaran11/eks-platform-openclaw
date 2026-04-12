@@ -8,3 +8,7 @@ nodePool:
   cpuLimit: "500"
   memoryLimit: "500Gi"
   consolidateAfter: 1m
+
+nodeClass:
+  clusterName: openclaw-eks
+  role: openclaw-eks-karpenter-node
