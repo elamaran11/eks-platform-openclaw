@@ -201,67 +201,65 @@ resource "aws_cloudwatch_event_target" "karpenter_interruption" {
   arn       = aws_sqs_queue.karpenter_interruption.arn
 }
 
-# ── ArgoCD Application for Karpenter (injected via Terraform for cluster endpoint) ──
+# ── Karpenter Helm Release (via Terraform — needs cluster endpoint injection) ──
 
-resource "kubectl_manifest" "argocd_karpenter" {
-  yaml_body = <<-YAML
-    apiVersion: argoproj.io/v1alpha1
-    kind: Application
-    metadata:
-      name: karpenter
-      namespace: argocd
-      annotations:
-        argocd.argoproj.io/sync-wave: "-1"
-      finalizers:
-        - resources-finalizer.argocd.argoproj.io
-    spec:
-      project: default
-      source:
-        chart: karpenter
-        repoURL: oci://public.ecr.aws/karpenter
-        targetRevision: 0.37.7
-        helm:
-          valuesObject:
-            serviceAccount:
-              name: karpenter
-            settings:
-              clusterName: "${module.eks.cluster_name}"
-              clusterEndpoint: "${module.eks.cluster_endpoint}"
-              interruptionQueue: "${aws_sqs_queue.karpenter_interruption.name}"
-            tolerations:
-              - key: CriticalAddonsOnly
-                operator: Exists
-            affinity:
-              nodeAffinity:
-                requiredDuringSchedulingIgnoredDuringExecution:
-                  nodeSelectorTerms:
-                    - matchExpressions:
-                        - key: eks.amazonaws.com/compute-type
-                          operator: In
-                          values: ["auto"]
-            controller:
-              resources:
-                requests:
-                  cpu: 250m
-                  memory: 512Mi
-                limits:
-                  cpu: "1"
-                  memory: 1Gi
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: karpenter
-      syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-        syncOptions:
-          - CreateNamespace=true
-          - ServerSideApply=true
-  YAML
+resource "helm_release" "karpenter" {
+  name             = "karpenter"
+  repository       = "oci://public.ecr.aws/karpenter"
+  chart            = "karpenter"
+  version          = "0.37.7"
+  namespace        = "karpenter"
+  create_namespace = true
+
+  set {
+    name  = "serviceAccount.name"
+    value = "karpenter"
+  }
+
+  set {
+    name  = "settings.clusterName"
+    value = module.eks.cluster_name
+  }
+
+  set {
+    name  = "settings.clusterEndpoint"
+    value = module.eks.cluster_endpoint
+  }
+
+  set {
+    name  = "settings.interruptionQueue"
+    value = aws_sqs_queue.karpenter_interruption.name
+  }
+
+  set {
+    name  = "tolerations[0].key"
+    value = "CriticalAddonsOnly"
+  }
+
+  set {
+    name  = "tolerations[0].operator"
+    value = "Exists"
+  }
+
+  set {
+    name  = "affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key"
+    value = "eks.amazonaws.com/compute-type"
+  }
+
+  set {
+    name  = "affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator"
+    value = "In"
+  }
+
+  set {
+    name  = "affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]"
+    value = "auto"
+  }
 
   depends_on = [
     module.eks_blueprints_addons,
     aws_eks_pod_identity_association.karpenter_controller,
     aws_sqs_queue.karpenter_interruption,
+    aws_eks_access_entry.karpenter_node,
   ]
 }
