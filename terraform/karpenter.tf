@@ -256,6 +256,16 @@ resource "helm_release" "karpenter" {
     value = "auto"
   }
 
+  set {
+    name  = "webhook.enabled"
+    value = "true"
+  }
+
+  set {
+    name  = "webhook.port"
+    value = "8443"
+  }
+
   depends_on = [
     module.eks_blueprints_addons,
     aws_eks_pod_identity_association.karpenter_controller,
