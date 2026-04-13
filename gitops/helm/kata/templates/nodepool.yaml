@@ -7,6 +7,7 @@ spec:
     metadata:
       labels:
         katacontainers.io/kata-runtime: "true"
+        eks.amazonaws.com/compute-type: "auto"
     spec:
       nodeClassRef:
         group: karpenter.k8s.aws
@@ -25,6 +26,9 @@ spec:
         - key: kubernetes.io/arch
           operator: In
           values: ["amd64"]
+        - key: eks.amazonaws.com/compute-type
+          operator: In
+          values: ["auto"]
       taints:
         - key: kata
           value: "true"
