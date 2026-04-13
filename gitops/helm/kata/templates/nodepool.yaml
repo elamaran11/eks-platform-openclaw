@@ -25,6 +25,8 @@ spec:
         - key: kubernetes.io/arch
           operator: In
           values: ["amd64"]
+        - key: eks.amazonaws.com/compute-type
+          operator: DoesNotExist
       taints:
         - key: kata
           value: "true"
