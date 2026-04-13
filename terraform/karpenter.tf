@@ -131,6 +131,12 @@ resource "aws_iam_role_policy" "karpenter_controller" {
         Resource = "arn:aws:ssm:${var.region}::parameter/aws/service/*"
       },
       {
+        Sid      = "AllowEKS"
+        Effect   = "Allow"
+        Action   = ["eks:DescribeCluster"]
+        Resource = "arn:aws:eks:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${local.cluster_name}"
+      },
+      {
         Sid      = "AllowPricing"
         Effect   = "Allow"
         Action   = "pricing:GetProducts"
