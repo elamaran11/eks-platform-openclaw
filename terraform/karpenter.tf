@@ -257,6 +257,11 @@ resource "helm_release" "karpenter" {
   }
 
   set {
+    name  = "settings.clusterCIDR"
+    value = "172.20.0.0/16"
+  }
+
+  set {
     name  = "webhook.enabled"
     value = "true"
   }
