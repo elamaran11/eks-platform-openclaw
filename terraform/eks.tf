@@ -17,6 +17,13 @@ module "eks" {
     node_pools = ["general-purpose", "system"]
   }
 
+  # kube-proxy addon — needed for self-managed Karpenter kata nodes to reach ClusterIP services
+  cluster_addons = {
+    kube-proxy = {
+      most_recent = true
+    }
+  }
+
   # Use EKS Access Entries API (GA 2024) — auditable via CloudTrail, no aws-auth ConfigMap
   authentication_mode                      = "API"
   enable_cluster_creator_admin_permissions = true
