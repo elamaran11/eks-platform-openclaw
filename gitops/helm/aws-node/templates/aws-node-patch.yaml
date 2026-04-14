@@ -1,5 +1,7 @@
-# Job that patches aws-node DaemonSet affinity to include auto compute-type nodes
-# Runs as ArgoCD PreSync hook so kata nodes get VPC CNI on every sync
+# PreSync hook Jobs that patch addon DaemonSet affinities to include auto compute-type nodes
+# Required for kata nodes (self-managed Karpenter) to get VPC CNI and kube-proxy networking
+# kube-proxy and aws-node addon schemas don't support affinity via configuration_values
+
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -40,7 +42,7 @@ subjects:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: aws-node-affinity-patch
+  name: addon-affinity-patch
   namespace: kube-system
   annotations:
     argocd.argoproj.io/hook: PreSync
@@ -57,6 +59,17 @@ spec:
             - sh
             - -c
             - |
+              # Patch aws-node: change NotIn[auto] -> In[auto]
               kubectl patch daemonset aws-node -n kube-system --type=json -p='[
                 {"op":"replace","path":"/spec/template/spec/affinity/nodeAffinity/requiredDuringSchedulingIgnoredDuringExecution/nodeSelectorTerms/0/matchExpressions/0","value":{"key":"eks.amazonaws.com/compute-type","operator":"In","values":["auto"]}}
-              ]' && echo "aws-node affinity patched for kata nodes"
+              ]' && echo "aws-node affinity patched"
+
+              # Patch kube-proxy: remove conflicting NotIn[auto] rule (index 2), keep In[auto] (index 0)
+              kubectl patch daemonset kube-proxy -n kube-system --type=json -p='[
+                {"op":"remove","path":"/spec/template/spec/affinity/nodeAffinity/requiredDuringSchedulingIgnoredDuringExecution/nodeSelectorTerms/0/matchExpressions/2"}
+              ]' 2>/dev/null && echo "kube-proxy conflicting rule removed" || echo "kube-proxy already patched"
+
+              # Patch ebs-csi-node: change NotIn[fargate,auto,hybrid] -> In[auto]
+              kubectl patch daemonset ebs-csi-node -n kube-system --type=json -p='[
+                {"op":"replace","path":"/spec/template/spec/affinity/nodeAffinity/requiredDuringSchedulingIgnoredDuringExecution/nodeSelectorTerms/0/matchExpressions/0","value":{"key":"eks.amazonaws.com/compute-type","operator":"In","values":["auto"]}}
+              ]' && echo "ebs-csi-node affinity patched"

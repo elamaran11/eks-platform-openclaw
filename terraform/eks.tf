@@ -24,29 +24,8 @@ module "eks" {
       most_recent                 = true
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
-      # Allow kube-proxy to run on auto compute-type nodes (kata nodes)
-      configuration_values = jsonencode({
-        affinity = {
-          nodeAffinity = {
-            requiredDuringSchedulingIgnoredDuringExecution = {
-              nodeSelectorTerms = [{
-                matchExpressions = [
-                  {
-                    key      = "eks.amazonaws.com/compute-type"
-                    operator = "In"
-                    values   = ["auto"]
-                  },
-                  {
-                    key      = "kubernetes.io/arch"
-                    operator = "In"
-                    values   = ["amd64", "arm64"]
-                  }
-                ]
-              }]
-            }
-          }
-        }
-      })
+      # Note: kube-proxy addon schema does not support affinity configuration_values
+      # Affinity patch is handled by aws-node-kata GitOps PreSync hook
     }
     coredns = {
       most_recent                 = true
