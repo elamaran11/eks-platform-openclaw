@@ -31,3 +31,33 @@ resource "kubernetes_secret" "litellm" {
     aws_region                = var.bedrock_region
   }
 }
+
+# OpenClaw namespace and service account for sandbox pods
+resource "kubernetes_namespace" "openclaw" {
+  metadata {
+    name = "openclaw"
+  }
+  depends_on = [module.eks]
+}
+
+resource "kubernetes_service_account" "openclaw_sandbox" {
+  metadata {
+    name      = "openclaw-sandbox"
+    namespace = kubernetes_namespace.openclaw.metadata[0].name
+  }
+  depends_on = [kubernetes_namespace.openclaw]
+}
+
+# LiteLLM API key secret for OpenClaw sandboxes
+resource "kubernetes_secret" "openclaw_litellm_key" {
+  metadata {
+    name      = "openclaw-litellm-key"
+    namespace = kubernetes_namespace.openclaw.metadata[0].name
+  }
+
+  data = {
+    api-key = "sk-${random_password.litellm_api_key.result}"
+  }
+
+  depends_on = [kubernetes_namespace.openclaw]
+}

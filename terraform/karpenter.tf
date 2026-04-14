@@ -33,6 +33,12 @@ resource "aws_iam_role_policy_attachment" "karpenter_node_ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# VPC CNI policy — required for aws-node DaemonSet to configure pod networking on kata nodes
+resource "aws_iam_role_policy_attachment" "karpenter_node_cni" {
+  role       = aws_iam_role.karpenter_node.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+}
+
 resource "aws_iam_instance_profile" "karpenter_node" {
   name = "${local.cluster_name}-karpenter-node"
   role = aws_iam_role.karpenter_node.name
