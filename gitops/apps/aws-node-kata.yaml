@@ -16,9 +16,14 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: kube-system
+  ignoreDifferences:
+    - group: apps
+      kind: DaemonSet
+      name: aws-node
   syncPolicy:
     automated:
       prune: false
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
