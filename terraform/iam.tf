@@ -27,6 +27,16 @@ resource "aws_iam_role_policy_attachment" "ebs_csi" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
+# Pod Identity association for EBS CSI controller (used by kata nodes)
+resource "aws_eks_pod_identity_association" "ebs_csi" {
+  cluster_name    = module.eks.cluster_name
+  namespace       = "kube-system"
+  service_account = "ebs-csi-controller-sa"
+  role_arn        = aws_iam_role.ebs_csi.arn
+
+  tags = local.tags
+}
+
 # IAM role for LiteLLM pod to call Bedrock via Pod Identity
 resource "aws_iam_role" "litellm_bedrock" {
   name = "${local.cluster_name}-litellm-bedrock"
