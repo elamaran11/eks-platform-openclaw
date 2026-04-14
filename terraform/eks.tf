@@ -24,8 +24,6 @@ module "eks" {
       most_recent                 = true
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
-      # Note: kube-proxy addon schema does not support affinity configuration_values
-      # Affinity patch is handled by aws-node-kata GitOps PreSync hook
     }
     coredns = {
       most_recent                 = true
@@ -37,31 +35,6 @@ module "eks" {
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
       service_account_role_arn    = aws_iam_role.ebs_csi.arn
-      # Allow ebs-csi-node to run on auto compute-type nodes (kata nodes)
-      configuration_values = jsonencode({
-        node = {
-          affinity = {
-            nodeAffinity = {
-              requiredDuringSchedulingIgnoredDuringExecution = {
-                nodeSelectorTerms = [{
-                  matchExpressions = [
-                    {
-                      key      = "eks.amazonaws.com/compute-type"
-                      operator = "In"
-                      values   = ["auto"]
-                    },
-                    {
-                      key      = "kubernetes.io/os"
-                      operator = "In"
-                      values   = ["linux"]
-                    }
-                  ]
-                }]
-              }
-            }
-          }
-        }
-      })
     }
   }
 

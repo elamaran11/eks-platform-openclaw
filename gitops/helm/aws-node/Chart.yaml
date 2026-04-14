@@ -1,5 +1,0 @@
-apiVersion: v2
-name: aws-node-kata
-description: Patches aws-node DaemonSet affinity to run on kata (auto compute-type) nodes
-type: application
-version: 0.1.0
