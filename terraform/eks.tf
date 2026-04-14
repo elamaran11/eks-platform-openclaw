@@ -17,23 +17,19 @@ module "eks" {
     node_pools = ["general-purpose", "system"]
   }
 
-  # EKS managed addons — needed for self-managed Karpenter kata nodes
+  # EKS managed addons — kube-proxy and EBS CSI for self-managed Karpenter kata nodes
+  # Note: aws-node (VPC CNI) is not available as addon with Auto Mode — managed internally
   cluster_addons = {
     kube-proxy = {
-      most_recent              = true
-      resolve_conflicts_on_create = "OVERWRITE"
-      resolve_conflicts_on_update = "OVERWRITE"
-    }
-    aws-node = {
-      most_recent              = true
+      most_recent                 = true
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
     }
     aws-ebs-csi-driver = {
-      most_recent              = true
+      most_recent                 = true
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
-      service_account_role_arn = aws_iam_role.ebs_csi.arn
+      service_account_role_arn    = aws_iam_role.ebs_csi.arn
     }
   }
 
