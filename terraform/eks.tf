@@ -18,12 +18,35 @@ module "eks" {
   }
 
   # EKS managed addons — for self-managed Karpenter kata nodes
-  # Note: aws-node (VPC CNI) is not available as addon with Auto Mode — managed internally
+  # configuration_values bakes in correct affinity so kata nodes get these addons on fresh install
   cluster_addons = {
     kube-proxy = {
       most_recent                 = true
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
+      # Allow kube-proxy to run on auto compute-type nodes (kata nodes)
+      configuration_values = jsonencode({
+        affinity = {
+          nodeAffinity = {
+            requiredDuringSchedulingIgnoredDuringExecution = {
+              nodeSelectorTerms = [{
+                matchExpressions = [
+                  {
+                    key      = "eks.amazonaws.com/compute-type"
+                    operator = "In"
+                    values   = ["auto"]
+                  },
+                  {
+                    key      = "kubernetes.io/arch"
+                    operator = "In"
+                    values   = ["amd64", "arm64"]
+                  }
+                ]
+              }]
+            }
+          }
+        }
+      })
     }
     coredns = {
       most_recent                 = true
@@ -35,6 +58,31 @@ module "eks" {
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
       service_account_role_arn    = aws_iam_role.ebs_csi.arn
+      # Allow ebs-csi-node to run on auto compute-type nodes (kata nodes)
+      configuration_values = jsonencode({
+        node = {
+          affinity = {
+            nodeAffinity = {
+              requiredDuringSchedulingIgnoredDuringExecution = {
+                nodeSelectorTerms = [{
+                  matchExpressions = [
+                    {
+                      key      = "eks.amazonaws.com/compute-type"
+                      operator = "In"
+                      values   = ["auto"]
+                    },
+                    {
+                      key      = "kubernetes.io/os"
+                      operator = "In"
+                      values   = ["linux"]
+                    }
+                  ]
+                }]
+              }
+            }
+          }
+        }
+      })
     }
   }
 
