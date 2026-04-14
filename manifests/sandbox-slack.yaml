@@ -23,6 +23,9 @@ spec:
           operator: Equal
           value: "true"
           effect: NoSchedule
+      volumes:
+        - name: workspaces-vol
+          emptyDir: {}
       containers:
         - name: openclaw
           image: ghcr.io/openclaw/openclaw:latest
@@ -118,14 +121,4 @@ spec:
             - containerPort: 18790
           volumeMounts:
             - mountPath: /home/node/.openclaw
-              name: workspaces-pvc
-  volumeClaimTemplates:
-    - metadata:
-        name: workspaces-pvc
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        storageClassName: kata-ebs-gp3
-        resources:
-          requests:
-            storage: 2Gi
+              name: workspaces-vol
