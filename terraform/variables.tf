@@ -29,9 +29,15 @@ variable "vpc_cidr" {
 }
 
 variable "enable_kata_nodes" {
-  description = "Whether to deploy bare-metal Kata container node pool"
+  description = "Whether to deploy bare-metal Kata container node group"
   type        = bool
   default     = true
+}
+
+variable "kata_instance_types" {
+  description = "Bare-metal instance types for Kata container nodes"
+  type        = list(string)
+  default     = ["c5.metal", "m5.metal"]
 }
 
 variable "cluster_endpoint_public_access" {
@@ -53,7 +59,7 @@ variable "admin_role_arns" {
 }
 
 variable "gitops_repo_url" {
-  description = "Git repository URL ArgoCD watches for app-of-apps (e.g. https://github.com/org/openclaw-eks-automode)"
+  description = "Git repository URL ArgoCD watches for app-of-apps (e.g. https://github.com/org/eks-platform-openclaw)"
   type        = string
 }
 

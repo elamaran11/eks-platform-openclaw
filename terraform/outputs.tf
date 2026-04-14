@@ -29,14 +29,14 @@ output "litellm_api_key" {
   sensitive   = true
 }
 
-output "argocd_server_url" {
-  description = "ArgoCD server URL"
-  value       = "https://localhost:8080 (via port-forward)"
-}
-
 output "argocd_access_cmd" {
   description = "Port-forward command to access ArgoCD UI"
-  value       = "kubectl port-forward -n argocd svc/argocd-server 8080:443"
+  value       = "kubectl port-forward -n argocd svc/argo-cd-argocd-server 8080:443"
+}
+
+output "argocd_initial_password_cmd" {
+  description = "Retrieve initial ArgoCD admin password"
+  value       = "kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
 }
 
 output "grafana_access_cmd" {
@@ -47,6 +47,16 @@ output "grafana_access_cmd" {
 output "vpc_id" {
   description = "VPC ID"
   value       = module.vpc.vpc_id
+}
+
+output "bedrock_guardrail_id" {
+  description = "Bedrock Guardrail ID"
+  value       = aws_bedrock_guardrail.openclaw.guardrail_id
+}
+
+output "bedrock_guardrail_version" {
+  description = "Bedrock Guardrail version"
+  value       = aws_bedrock_guardrail_version.openclaw.version
 }
 
 output "gitops_next_step" {

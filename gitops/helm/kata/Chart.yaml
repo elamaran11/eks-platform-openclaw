@@ -1,5 +1,5 @@
 apiVersion: v2
 name: kata
-description: Kata bare-metal NodePool and RuntimeClass for OpenClaw sandboxes
+description: Kata RuntimeClass and StorageClass for OpenClaw sandboxes
 type: application
 version: 0.1.0
