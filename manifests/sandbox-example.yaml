@@ -24,18 +24,24 @@ spec:
     model: bedrock/us.anthropic.claude-sonnet-4-6-20251001-v1:0
     contextWindow: 200000
 
-  # Slack integration
+  # Slack integration — tokens from slack-tokens secret
   channels:
     - type: slack
       config:
-        botToken: "xoxb-YOUR-BOT-TOKEN"
-        appToken: "xapp-YOUR-APP-TOKEN"
-        signingSecret: "YOUR-SIGNING-SECRET"
+        botTokenSecretRef:
+          name: slack-tokens
+          key: bot-token
+        appTokenSecretRef:
+          name: slack-tokens
+          key: app-token
+        signingSecretRef:
+          name: slack-tokens
+          key: signing-secret
 
   # Persistent workspace storage
   storage:
     size: 2Gi
-    storageClassName: gp2
+    storageClassName: ebs-gp3
 
   securityContext:
     runAsNonRoot: true

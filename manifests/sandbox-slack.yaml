@@ -125,7 +125,7 @@ spec:
       spec:
         accessModes:
           - ReadWriteOnce
-        storageClassName: ebs-gp3
+        storageClassName: kata-ebs-gp3
         resources:
           requests:
             storage: 2Gi
