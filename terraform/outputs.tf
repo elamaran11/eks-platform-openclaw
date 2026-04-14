@@ -49,16 +49,6 @@ output "vpc_id" {
   value       = module.vpc.vpc_id
 }
 
-output "bedrock_guardrail_id" {
-  description = "Bedrock Guardrail ID"
-  value       = aws_bedrock_guardrail.openclaw.guardrail_id
-}
-
-output "bedrock_guardrail_version" {
-  description = "Bedrock Guardrail version"
-  value       = aws_bedrock_guardrail_version.openclaw.version
-}
-
 output "gitops_next_step" {
   description = "After terraform apply: replace repo URL placeholder in gitops/apps/*.yaml then push"
   value       = "sed -i '' 's|GITOPS_REPO_URL_PLACEHOLDER|${var.gitops_repo_url}|g' gitops/apps/*.yaml && git add gitops/ && git commit -m 'chore: set ArgoCD repo URL' && git push"
