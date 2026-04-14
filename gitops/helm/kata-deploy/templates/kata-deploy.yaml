@@ -27,7 +27,7 @@ spec:
         katacontainers.io/kata-runtime: "true"
       priorityClassName: system-node-critical
       initContainers:
-        - name: kata-deploy
+        - name: kata-install
           image: quay.io/kata-containers/kata-deploy:stable
           command:
             - bash
