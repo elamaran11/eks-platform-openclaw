@@ -20,6 +20,15 @@ spec:
     - group: node.k8s.io
       kind: RuntimeClass
       name: kata-qemu
+    - group: ""
+      kind: ServiceAccount
+      name: kata-deploy
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: kata-deploy
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+      name: kata-deploy
   syncPolicy:
     automated:
       prune: false
