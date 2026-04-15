@@ -39,6 +39,26 @@ spec:
                     values:
                       - linux
       initContainers:
+        - name: wait-for-eni
+          image: amazon/aws-cli
+          command:
+            - sh
+            - -c
+            - |
+              TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token \
+                -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+              INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
+                http://169.254.169.254/latest/meta-data/instance-id)
+              echo "Waiting for ENI to be visible in EC2 API for instance $INSTANCE_ID..."
+              until aws ec2 describe-network-interfaces \
+                --region us-west-2 \
+                --filters "Name=attachment.instance-id,Values=$INSTANCE_ID" \
+                --query 'NetworkInterfaces[0].NetworkInterfaceId' \
+                --output text 2>/dev/null | grep -q "^eni-"; do
+                echo "ENI not ready yet, retrying in 5s..."
+                sleep 5
+              done
+              echo "ENI is ready, starting aws-node"
         - name: aws-vpc-cni-init
           image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init:v1.21.1
           imagePullPolicy: Always
