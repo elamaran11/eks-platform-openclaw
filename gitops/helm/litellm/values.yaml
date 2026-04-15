@@ -18,42 +18,43 @@ litellm-helm:
           name: litellm-secrets
           key: aws_region
 
-  model_list:
-    - model_name: claude-sonnet-4-6
-      litellm_params:
-        model: bedrock/us.anthropic.claude-sonnet-4-6-20251001-v1:0
-        aws_region_name: "os.environ/AWS_REGION"
-        guardrailConfig:
-          guardrailIdentifier: "os.environ/BEDROCK_GUARDRAIL_ID"
-          guardrailVersion: "os.environ/BEDROCK_GUARDRAIL_VERSION"
-          trace: ENABLED
+  proxy_config:
+    model_list:
+      - model_name: claude-sonnet-4-6
+        litellm_params:
+          model: bedrock/us.anthropic.claude-sonnet-4-6-20251001-v1:0
+          aws_region_name: "os.environ/AWS_REGION"
+          guardrailConfig:
+            guardrailIdentifier: "os.environ/BEDROCK_GUARDRAIL_ID"
+            guardrailVersion: "os.environ/BEDROCK_GUARDRAIL_VERSION"
+            trace: ENABLED
 
-    - model_name: claude-opus-4-6
-      litellm_params:
-        model: bedrock/us.anthropic.claude-opus-4-6-20250514-v1:0
-        aws_region_name: "os.environ/AWS_REGION"
-        guardrailConfig:
-          guardrailIdentifier: "os.environ/BEDROCK_GUARDRAIL_ID"
-          guardrailVersion: "os.environ/BEDROCK_GUARDRAIL_VERSION"
-          trace: ENABLED
+      - model_name: claude-opus-4-6
+        litellm_params:
+          model: bedrock/us.anthropic.claude-opus-4-6-20250514-v1:0
+          aws_region_name: "os.environ/AWS_REGION"
+          guardrailConfig:
+            guardrailIdentifier: "os.environ/BEDROCK_GUARDRAIL_ID"
+            guardrailVersion: "os.environ/BEDROCK_GUARDRAIL_VERSION"
+            trace: ENABLED
 
-    - model_name: claude-haiku-4-5
-      litellm_params:
-        model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
-        aws_region_name: "os.environ/AWS_REGION"
-        guardrailConfig:
-          guardrailIdentifier: "os.environ/BEDROCK_GUARDRAIL_ID"
-          guardrailVersion: "os.environ/BEDROCK_GUARDRAIL_VERSION"
-          trace: ENABLED
+      - model_name: claude-haiku-4-5
+        litellm_params:
+          model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+          aws_region_name: "os.environ/AWS_REGION"
+          guardrailConfig:
+            guardrailIdentifier: "os.environ/BEDROCK_GUARDRAIL_ID"
+            guardrailVersion: "os.environ/BEDROCK_GUARDRAIL_VERSION"
+            trace: ENABLED
 
-  general_settings:
-    default_model: claude-sonnet-4-6
-    store_model_in_db: false  # Use sqlite, no postgresql dependency
+    general_settings:
+      default_model: claude-sonnet-4-6
+      store_model_in_db: false
 
-  litellm_settings:
-    success_callback: ["prometheus"]
-    failure_callback: ["prometheus"]
-    prometheus_url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
+    litellm_settings:
+      success_callback: ["prometheus"]
+      failure_callback: ["prometheus"]
+      prometheus_url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
 
   db_url: "sqlite:///litellm.db"
 
