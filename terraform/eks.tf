@@ -24,30 +24,6 @@ module "eks" {
       most_recent                 = true
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
-      # Patch nodeAffinity to include managed node group nodes (not just auto-mode).
-      # By default kube-proxy only targets eks.amazonaws.com/compute-type=auto nodes,
-      # which excludes the kata managed node group. Without kube-proxy, kata-deploy
-      # can't reach the Kubernetes API to complete installation.
-      configuration_values = jsonencode({
-        nodeAffinity = {
-          requiredDuringSchedulingIgnoredDuringExecution = {
-            nodeSelectorTerms = [
-              {
-                matchExpressions = [
-                  { key = "eks.amazonaws.com/compute-type", operator = "In", values = ["auto"] },
-                  { key = "kubernetes.io/arch", operator = "In", values = ["amd64", "arm64"] }
-                ]
-              },
-              {
-                matchExpressions = [
-                  { key = "eks.amazonaws.com/nodegroup", operator = "Exists" },
-                  { key = "kubernetes.io/arch", operator = "In", values = ["amd64", "arm64"] }
-                ]
-              }
-            ]
-          }
-        }
-      })
     }
     coredns = {
       most_recent                 = true

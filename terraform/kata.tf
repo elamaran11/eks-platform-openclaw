@@ -87,3 +87,39 @@ resource "aws_eks_node_group" "kata" {
     aws_eks_access_entry.kata_node,
   ]
 }
+
+# Patch kube-proxy DaemonSet to also run on kata managed node group nodes.
+# By default the kube-proxy addon only targets eks.amazonaws.com/compute-type=auto
+# (EKS Auto Mode nodes). Kata nodes are a non-auto-mode managed node group and
+# need kube-proxy so that kata-deploy can reach the Kubernetes API during install.
+resource "null_resource" "kube_proxy_kata_affinity" {
+  count = var.enable_kata_nodes ? 1 : 0
+
+  triggers = {
+    cluster_name = module.eks.cluster_name
+    node_group   = aws_eks_node_group.kata[0].node_group_name
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig --name ${module.eks.cluster_name} --region ${var.region}
+      kubectl patch daemonset kube-proxy -n kube-system --type=json -p='[
+        {"op":"replace","path":"/spec/template/spec/affinity/nodeAffinity/requiredDuringSchedulingIgnoredDuringExecution/nodeSelectorTerms","value":[
+          {"matchExpressions":[
+            {"key":"eks.amazonaws.com/compute-type","operator":"In","values":["auto"]},
+            {"key":"kubernetes.io/arch","operator":"In","values":["amd64","arm64"]}
+          ]},
+          {"matchExpressions":[
+            {"key":"eks.amazonaws.com/nodegroup","operator":"Exists"},
+            {"key":"kubernetes.io/arch","operator":"In","values":["amd64","arm64"]}
+          ]}
+        ]}
+      ]'
+    EOT
+  }
+
+  depends_on = [
+    aws_eks_node_group.kata,
+    module.eks,
+  ]
+}
