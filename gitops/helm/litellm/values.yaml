@@ -62,6 +62,7 @@ litellm-helm:
           - claude-haiku-4-5
 
     litellm_settings:
+      drop_params: true
       success_callback: ["prometheus"]
       failure_callback: ["prometheus"]
       prometheus_url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
