@@ -27,7 +27,7 @@ litellm-helm:
           guardrailConfig:
             guardrailIdentifier: "os.environ/BEDROCK_GUARDRAIL_ID"
             guardrailVersion: "os.environ/BEDROCK_GUARDRAIL_VERSION"
-            trace: ENABLED
+            trace: enabled
 
       - model_name: claude-opus-4-6
         litellm_params:
@@ -36,7 +36,7 @@ litellm-helm:
           guardrailConfig:
             guardrailIdentifier: "os.environ/BEDROCK_GUARDRAIL_ID"
             guardrailVersion: "os.environ/BEDROCK_GUARDRAIL_VERSION"
-            trace: ENABLED
+            trace: enabled
 
       - model_name: claude-haiku-4-5
         litellm_params:
@@ -45,7 +45,7 @@ litellm-helm:
           guardrailConfig:
             guardrailIdentifier: "os.environ/BEDROCK_GUARDRAIL_ID"
             guardrailVersion: "os.environ/BEDROCK_GUARDRAIL_VERSION"
-            trace: ENABLED
+            trace: enabled
 
     general_settings:
       default_model: claude-sonnet-4-6
