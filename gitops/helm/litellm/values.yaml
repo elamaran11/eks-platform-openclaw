@@ -17,8 +17,6 @@ litellm-helm:
         secretKeyRef:
           name: litellm-secrets
           key: aws_region
-    - name: DATABASE_URL
-      value: "postgresql://litellm:NoTaGrEaTpAsSwOrD@litellm-postgresql:5432/litellm"
 
   proxy_config:
     model_list:
