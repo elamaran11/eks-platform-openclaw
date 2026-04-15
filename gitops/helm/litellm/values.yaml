@@ -22,6 +22,8 @@ litellm-helm:
         secretKeyRef:
           name: litellm-secrets
           key: api_key
+    - name: LITELLM_DROP_PARAMS
+      value: "true"
 
   proxy_config:
     model_list:
