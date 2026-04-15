@@ -95,3 +95,16 @@ litellm-helm:
   serviceAccount:
     create: true
     name: litellm
+
+  command:
+    - sh
+    - -c
+    - |
+      python3 -c "
+      f='/app/litellm/litellm_core_utils/core_helpers.py'
+      c=open(f).read()
+      old='\"_skip_mcp_handler\",'
+      new='\"_skip_mcp_handler\",\n        \"store\",\n        \"logprobs\",\n        \"top_logprobs\",'
+      open(f,'w').write(c.replace(old,new,1))
+      "
+      exec litellm --config /etc/litellm/config.yaml
