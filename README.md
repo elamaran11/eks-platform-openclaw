@@ -1,58 +1,89 @@
 # OpenClaw on EKS
 
-> AI agents with VM-level isolation, running on bare-metal Kubernetes — powered by Claude via AWS Bedrock.
+**Production-grade AI agents with hardware-level sandbox isolation on Amazon EKS.**
+
+Every agent conversation runs inside a Kata Containers QEMU virtual machine on bare-metal EC2. Not just a container — an actual VM with its own kernel. Agents connect to Slack, reason with Claude via AWS Bedrock, and are deployed entirely through GitOps.
 
 ![Architecture](generated-diagrams/openclaw-architecture.png)
 
 ---
 
-## What is this?
+## Why this architecture
 
-A production-grade platform for running [OpenClaw](https://openclaw.ai) AI agents on Amazon EKS with **hardware-level sandbox isolation**. Every agent conversation runs inside a Kata Containers VM on bare-metal EC2 — not just a container, an actual virtual machine. Agents connect to Slack, use Claude models via AWS Bedrock, and are fully managed through GitOps.
+### The problem with running AI agents in containers
 
----
+AI agents execute code, browse the web, read files, and call external APIs. A compromised or misbehaving agent in a standard container can escape to the host kernel, access other workloads' memory, or pivot across the cluster. For production agent deployments, that's not acceptable.
 
-## Why it's different
+### The solution: hardware VM isolation per agent
 
-| Feature | This platform | Typical AI deployment |
-|---|---|---|
-| Agent isolation | Kata VM on bare-metal (hardware boundary) | Shared container namespace |
-| Model access | Bedrock cross-region inference profiles | Direct API keys in env vars |
-| Credentials | EKS Pod Identity (no static keys) | IAM user keys or instance profiles |
-| Deployment | ArgoCD app-of-apps, fully GitOps | kubectl apply / helm install |
-| Observability | Prometheus + Grafana with LiteLLM metrics | Logs only |
-| Content safety | Bedrock Guardrail (PII anonymization, content filtering) | None |
+This platform runs each OpenClaw agent inside a **Kata Containers QEMU virtual machine** on bare-metal EC2 (`c5.metal` / `m5.metal`). The agent process is isolated at the hardware level — it has its own kernel, its own memory space, and cannot escape to the host regardless of what it executes. The VM boundary is enforced by the CPU, not by Linux namespaces.
+
+This is the same isolation model used by AWS Fargate and AWS Lambda under the hood.
 
 ---
 
-## Architecture
+## Key design decisions
+
+### 1. Kata Containers on bare-metal, not Fargate or Lambda
+
+Fargate gives you VM isolation but no control over the runtime. Lambda gives you isolation but no persistent state or long-running processes. OpenClaw agents need persistent workspace, long-running sessions, and direct Kubernetes API access for tool use. Kata on bare-metal gives all of that with full control.
+
+**Bare-metal matters**: Kata requires hardware virtualization (VT-x/AMD-V). Nested virtualization on regular EC2 instances adds overhead and instability. `c5.metal` and `m5.metal` give direct hardware access — no hypervisor layer between the VM and the CPU.
+
+### 2. EKS Auto Mode for the control plane
+
+EKS Auto Mode manages Karpenter, VPC CNI, EBS CSI, CoreDNS, and the load balancer controller automatically. The platform team doesn't maintain node AMIs, addon versions, or scaling configuration for the general-purpose workloads. Only the kata bare-metal nodes require explicit management — everything else is hands-off.
+
+### 3. EKS Managed Node Group for kata nodes (not Karpenter)
+
+Karpenter is great for dynamic scaling but adds complexity for bare-metal nodes that need specific instance types and a custom runtime. A managed node group with `c5.metal` / `m5.metal` is simpler, gets automatic AMI updates, and integrates cleanly with EKS addons. The node group is sized conservatively (1 desired, 3 max) — kata VMs are heavyweight by design.
+
+### 4. LiteLLM as the model gateway
+
+Direct Bedrock API calls from agents would require each agent pod to have AWS credentials and know Bedrock's API format. LiteLLM provides an OpenAI-compatible endpoint that:
+- Abstracts the model provider (swap Bedrock for OpenAI or Anthropic without changing agent code)
+- Centralizes API key management with PostgreSQL persistence
+- Applies Bedrock Guardrails transparently to every request
+- Exposes Prometheus metrics for observability
+
+### 5. EKS Pod Identity instead of static keys
+
+No IAM user keys, no environment variable secrets for AWS access. EKS Pod Identity binds an IAM role directly to the LiteLLM service account. Credentials are rotated automatically, scoped to the pod, and auditable via CloudTrail. The kata agent pods never touch AWS credentials directly.
+
+### 6. Bedrock Guardrail at the proxy layer
+
+Content filtering and PII anonymization happen at LiteLLM, not in the agent. This means:
+- Every model call is filtered regardless of which agent makes it
+- PII (email, phone, AWS keys) is anonymized before reaching the model
+- Guardrail configuration is centralized and auditable
+- Agents can't bypass filtering by calling Bedrock directly (they don't have credentials)
+
+### 7. ArgoCD app-of-apps with sync waves
+
+The platform has strict deployment ordering requirements: CNI must be ready before kata nodes join, kata runtime must be installed before agent pods schedule, LiteLLM must be up before agents start. ArgoCD sync waves enforce this:
 
 ```
-Slack ──► OpenClaw Sandbox (Kata VM)
-               │
-               ▼
-         LiteLLM Proxy  ──► AWS Bedrock (Claude Sonnet 4.6 / Opus / Haiku)
-               │                    │
-               │              Bedrock Guardrail
-               │
-         PostgreSQL (key store)
-               │
-         Prometheus + Grafana
+Wave -1: aws-node-kata (VPC CNI for kata nodes)
+Wave  0: kata (StorageClass)
+Wave  1: kata-deploy (runtime installer) + monitoring
+Wave  2: litellm
+Wave  3: openclaw (operator + sandbox)
 ```
 
-### Key components
+---
 
-**EKS Auto Mode** — Manages the control plane, Karpenter, VPC CNI, EBS CSI, CoreDNS, and load balancing automatically. General-purpose and system node pools run on auto-mode. Kata nodes run as a dedicated EKS managed node group (non-auto-mode) on `c5.metal` / `m5.metal` bare-metal instances.
+## What you get
 
-**Kata Containers** — Each OpenClaw sandbox pod runs with `runtimeClassName: kata-qemu`. The agent process is isolated inside a QEMU virtual machine — a compromised agent cannot escape to the host kernel. `kata-deploy` installs the runtime on bare-metal nodes via a DaemonSet managed by ArgoCD.
-
-**LiteLLM Proxy** — OpenAI-compatible gateway that routes requests to Bedrock. Handles API key management, model routing, and strips OpenAI-specific parameters (like `store`) that Bedrock doesn't support. Backed by PostgreSQL for key persistence.
-
-**OpenClaw Operator** — Manages `Sandbox` CRDs. Each sandbox is a long-running agent process with a persistent workspace, Slack channel integration, and access to tools (browser, file system, code execution).
-
-**ArgoCD App-of-Apps** — All platform components are deployed via GitOps with sync waves ensuring correct ordering: CNI → kata runtime → LiteLLM → OpenClaw operator → sandboxes.
-
-**Bedrock Guardrail** — Content filtering with PII anonymization (email, phone, AWS keys) and content policy enforcement applied at the LiteLLM proxy layer.
+| Capability | Detail |
+|---|---|
+| Agent isolation | Kata QEMU VM per agent — hardware boundary, own kernel |
+| Model access | Claude Sonnet 4.6, Opus 4, Haiku 4.5 via Bedrock cross-region inference |
+| Content safety | Bedrock Guardrail — PII anonymization + content filtering on every request |
+| Credentials | EKS Pod Identity — no static keys anywhere |
+| Deployment | ArgoCD app-of-apps — full GitOps, sync waves, self-healing |
+| Observability | Prometheus + Grafana — LiteLLM request rate, latency, token usage |
+| Slack integration | Socket Mode WebSocket — DMs and @mentions, no public endpoint needed |
+| Persistence | PostgreSQL for LiteLLM key store, EmptyDir workspace per agent session |
 
 ---
 
@@ -79,11 +110,11 @@ cat > terraform/terraform.tfvars <<EOF
 gitops_repo_url = "https://github.com/YOUR_ORG/eks-platform-openclaw"
 EOF
 
-# 2. Deploy everything
+# 2. Deploy everything (~15 minutes)
 chmod +x scripts/install.sh
 ./scripts/install.sh
 
-# 3. Set up Slack integration
+# 3. Set up Slack tokens
 kubectl create secret generic slack-tokens \
   --namespace openclaw \
   --from-literal=bot-token=xoxb-YOUR-BOT-TOKEN \
@@ -101,19 +132,17 @@ kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
 
 ---
 
-## Slack setup
+## Slack app setup
 
 1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps)
-2. Enable **Socket Mode** and generate an App-Level Token (`xapp-...`)
+2. Enable **Socket Mode** → generate an App-Level Token (`xapp-...`)
 3. Add Bot Token Scopes: `channels:history`, `channels:read`, `im:history`, `im:read`, `im:write`, `chat:write`, `app_mentions:read`
-4. Install the app to your workspace and copy the Bot Token (`xoxb-...`)
-5. Create the secret (step 3 above) and the sandbox will connect automatically
+4. Install to your workspace → copy the Bot Token (`xoxb-...`)
+5. Create the secret (step 3 above) — the sandbox connects automatically
 
 ---
 
 ## Configuration
-
-Key variables in `terraform/variables.tf`:
 
 | Variable | Default | Description |
 |---|---|---|
@@ -130,55 +159,45 @@ Key variables in `terraform/variables.tf`:
 ## Project structure
 
 ```
-terraform/          # EKS cluster, VPC, IAM, Bedrock Guardrail, LiteLLM secrets
-  eks.tf            # EKS Auto Mode + addons (vpc-cni, kube-proxy, ebs-csi)
-  kata.tf           # Kata managed node group (bare-metal, 100GB disk)
-  litellm.tf        # LiteLLM namespace, secrets, API key
+terraform/
+  eks.tf              # EKS Auto Mode + addons (vpc-cni, kube-proxy, ebs-csi)
+  kata.tf             # Kata managed node group + kube-proxy affinity patch
+  litellm.tf          # LiteLLM namespace, secrets, API key
   bedrock_guardrail.tf
 
 gitops/
-  apps/             # ArgoCD Applications (app-of-apps pattern)
-    kata.yaml       # StorageClass (sync-wave 0)
-    kata-deploy.yaml    # Kata runtime installer (sync-wave 1)
-    aws-node-kata.yaml  # VPC CNI for kata nodes (sync-wave -1)
-    litellm.yaml    # LiteLLM proxy (sync-wave 2)
-    openclaw.yaml   # OpenClaw operator + sandbox (sync-wave 3)
-    monitoring.yaml # Prometheus + Grafana (sync-wave 1)
+  apps/               # ArgoCD Applications (app-of-apps)
+    aws-node-kata.yaml    # VPC CNI for kata nodes (wave -1)
+    kata.yaml             # StorageClass (wave 0)
+    kata-deploy.yaml      # Kata runtime installer (wave 1)
+    litellm.yaml          # LiteLLM proxy (wave 2)
+    openclaw.yaml         # OpenClaw operator + sandbox (wave 3)
+    monitoring.yaml       # Prometheus + Grafana (wave 1)
 
   helm/
-    kata/           # StorageClass (ebs-gp3 default)
-    kata-deploy/    # kata-deploy DaemonSet + kubelet-restart DaemonSet
-    aws-node/       # VPC CNI DaemonSet for non-auto-mode kata nodes
-    litellm/        # LiteLLM proxy with sitecustomize.py Bedrock patch
-    openclaw/       # OpenClaw operator + Sandbox CRD
-    monitoring/     # kube-prometheus-stack + Grafana dashboards
+    kata-deploy/      # kata-deploy DaemonSet + kubelet-restart DaemonSet
+    aws-node/         # VPC CNI DaemonSet for non-auto-mode kata nodes
+    litellm/          # LiteLLM proxy with sitecustomize.py Bedrock patch
+    openclaw/         # OpenClaw operator + Sandbox CRD
 
 scripts/
-  install.sh        # Full deploy: terraform + ArgoCD bootstrap
-  cleanup.sh        # Full teardown
+  install.sh          # Full deploy: terraform + ArgoCD bootstrap
+  cleanup.sh          # Full teardown
 ```
 
 ---
 
-## How kata nodes work
+## How kata nodes bootstrap
 
-EKS Auto Mode doesn't deploy `aws-node` (VPC CNI) to non-auto-mode nodes. The kata managed node group needs explicit CNI to become Ready. This platform handles it with:
+EKS Auto Mode doesn't deploy `aws-node` (VPC CNI) to non-auto-mode nodes. Getting kata nodes to Ready requires a specific sequence:
 
-1. **`vpc-cni` EKS addon** — deployed by terraform, ensures CNI is available before the node group creation times out
-2. **`kata-deploy` DaemonSet** — installs kata-qemu runtime binaries on bare-metal nodes; targets `katacontainers.io/kata-runtime=true` label (only set after installation completes)
-3. **`kata-kubelet-restart` DaemonSet** — kata-deploy restarts containerd during installation, breaking the kubelet's CRI connection; this DaemonSet restarts kubelet after installation to reconnect it
-4. **`kube-proxy` addon** — patched via terraform `configuration_values` to include managed node group nodes (default only targets auto-mode nodes)
+1. **`vpc-cni` EKS addon** (terraform) — provides CNI before the node group creation times out. A DaemonSet can't solve this because it can't schedule until the node is Ready — a chicken-and-egg that only an EKS-managed addon breaks.
 
----
+2. **`kube-proxy` affinity patch** (terraform `null_resource`) — by default kube-proxy only targets `eks.amazonaws.com/compute-type=auto` nodes. Kata nodes are a managed node group, not auto-mode. Without kube-proxy, `kata-deploy` can't reach the Kubernetes API to complete installation.
 
-## Observability
+3. **`kata-deploy` DaemonSet** (ArgoCD wave 1) — installs kata-qemu runtime binaries. Targets `katacontainers.io/kata-runtime=true`, a label only applied *after* installation completes, so it never runs on uninitialized nodes.
 
-LiteLLM exports Prometheus metrics. Grafana dashboards include:
-
-- Request rate and latency per model
-- Bedrock error rate (guardrail interventions, throttling)
-- Token usage
-- Kata node pool capacity
+4. **`kata-kubelet-restart` DaemonSet** (ArgoCD wave 1) — `kata-deploy` restarts containerd during installation, breaking the kubelet's CRI socket connection. This DaemonSet restarts kubelet after installation to reconnect it. Without this, the node goes NotReady ~4 minutes after kata-deploy finishes.
 
 ---
 
