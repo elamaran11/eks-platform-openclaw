@@ -63,6 +63,10 @@ litellm-helm:
 
     litellm_settings:
       drop_params: true
+      additional_drop_params:
+        - store
+        - logprobs
+        - top_logprobs
       success_callback: ["prometheus"]
       failure_callback: ["prometheus"]
       prometheus_url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
