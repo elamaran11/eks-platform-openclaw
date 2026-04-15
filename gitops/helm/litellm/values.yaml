@@ -24,8 +24,6 @@ litellm-helm:
           key: api_key
     - name: LITELLM_DROP_PARAMS
       value: "true"
-    - name: DATABASE_URL
-      value: "postgresql://litellm:NoTaGrEaTpAsSwOrD@litellm-postgresql:5432/litellm"
 
   volumes:
     - name: sitecustomize
