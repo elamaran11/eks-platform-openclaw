@@ -61,10 +61,15 @@ litellm-helm:
   db_url: "postgresql://litellm:NoTaGrEaTpAsSwOrD@litellm-postgresql:5432/litellm"
 
   postgresql:
-    enabled: false
+    enabled: true
     primary:
       persistence:
         storageClass: ebs-gp3
+      resources:
+        limits:
+          memory: 512Mi
+        requests:
+          memory: 256Mi
 
   migrations:
     enabled: false
