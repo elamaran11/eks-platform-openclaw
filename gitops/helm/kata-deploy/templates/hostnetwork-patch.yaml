@@ -1,0 +1,13 @@
+# Patch to add hostNetwork: true to kata-deploy DaemonSet.
+# The upstream chart doesn't expose hostNetwork as a values key,
+# but kata-deploy needs it to reach the kubelet API on port 10250
+# to check the container runtime version during installation.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kata-deploy
+  namespace: kube-system
+spec:
+  template:
+    spec:
+      hostNetwork: true
