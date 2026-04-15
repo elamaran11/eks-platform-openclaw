@@ -1,0 +1,142 @@
+<mxfile host="app.diagrams.net" modified="2026-04-15T00:00:00.000Z" agent="Claude" version="21.0.0" type="device">
+  <diagram name="OpenClaw on EKS" id="openclaw-arch">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- AWS Cloud boundary -->
+        <mxCell id="aws-cloud" value="AWS Cloud" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_aws_cloud_alt;strokeColor=#232F3E;fillColor=#FFFFFF;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=14;fontStyle=1;spacingTop=0;" vertex="1" parent="1">
+          <mxGeometry x="200" y="80" width="1380" height="900" as="geometry" />
+        </mxCell>
+
+        <!-- VPC -->
+        <mxCell id="vpc" value="Amazon VPC" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc;strokeColor=#8C4FFF;fillColor=#F4F0FF;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=13;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="240" y="130" width="1300" height="820" as="geometry" />
+        </mxCell>
+
+        <!-- EKS Cluster boundary -->
+        <mxCell id="eks-cluster" value="Amazon EKS Auto Mode" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_eks;strokeColor=#E7157B;fillColor=#FFF0F7;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=13;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="280" y="180" width="900" height="720" as="geometry" />
+        </mxCell>
+
+        <!-- Kata Node boundary -->
+        <mxCell id="kata-node" value="Kata Bare-Metal Node  (c5.metal / m5.metal)" style="strokeColor=#FF6B35;fillColor=#FFF5F0;strokeDashArray=8 4;strokeWidth=2;rounded=1;arcSize=4;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="310" y="260" width="380" height="280" as="geometry" />
+        </mxCell>
+
+        <!-- Kata VM boundary -->
+        <mxCell id="kata-vm" value="Kata QEMU Virtual Machine  ·  Hardware Isolation Boundary" style="strokeColor=#FF6B35;fillColor=#FFE8D6;strokeDashArray=4 2;strokeWidth=1.5;rounded=1;arcSize=4;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=11;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="330" y="310" width="340" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- OpenClaw Agent -->
+        <mxCell id="openclaw-agent" value="OpenClaw Agent" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#E7157B;labelBackgroundColor=#ffffff;align=center;html=1;fontSize=13;fontStyle=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ecs;" vertex="1" parent="1">
+          <mxGeometry x="450" y="360" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="openclaw-label" value="OpenClaw Agent" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="430" width="120" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- LiteLLM -->
+        <mxCell id="litellm" value="LiteLLM Proxy" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#E7157B;labelBackgroundColor=#ffffff;align=center;html=1;fontSize=13;fontStyle=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ecs;" vertex="1" parent="1">
+          <mxGeometry x="760" y="360" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="litellm-label" value="LiteLLM Proxy&#xa;OpenAI-compatible" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="720" y="430" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ArgoCD -->
+        <mxCell id="argocd" value="ArgoCD" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#E7157B;labelBackgroundColor=#ffffff;align=center;html=1;fontSize=13;fontStyle=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eks;" vertex="1" parent="1">
+          <mxGeometry x="380" y="620" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="argocd-label" value="ArgoCD GitOps" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="350" y="690" width="120" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- PostgreSQL -->
+        <mxCell id="postgres" value="PostgreSQL" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#C7131F;labelBackgroundColor=#ffffff;align=center;html=1;fontSize=13;fontStyle=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.rds;" vertex="1" parent="1">
+          <mxGeometry x="760" y="620" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="postgres-label" value="PostgreSQL&#xa;Key Store" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="730" y="690" width="120" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Bedrock boundary -->
+        <mxCell id="bedrock-group" value="Amazon Bedrock" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_general;strokeColor=#01A88D;fillColor=#F0FFF9;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=13;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="220" width="440" height="500" as="geometry" />
+        </mxCell>
+
+        <!-- Bedrock Guardrail -->
+        <mxCell id="guardrail" value="Bedrock Guardrail" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#01A88D;labelBackgroundColor=#ffffff;align=center;html=1;fontSize=13;fontStyle=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="300" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="guardrail-label" value="Bedrock Guardrail&#xa;PII · Content Filter" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1125" y="370" width="130" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Claude Models -->
+        <mxCell id="claude" value="Claude Models" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#01A88D;labelBackgroundColor=#ffffff;align=center;html=1;fontSize=13;fontStyle=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="300" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="claude-label" value="Claude Sonnet 4.6&#xa;Opus 4 · Haiku 4.5" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1345" y="370" width="130" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- IAM Pod Identity -->
+        <mxCell id="iam" value="EKS Pod Identity" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#DD344C;labelBackgroundColor=#ffffff;align=center;html=1;fontSize=13;fontStyle=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.role;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="560" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="iam-label" value="EKS Pod Identity&#xa;No Static Keys" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1125" y="630" width="130" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Developer (outside AWS) -->
+        <mxCell id="developer" value="Developer" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#232F3E;labelBackgroundColor=#ffffff;align=center;html=1;fontSize=13;fontStyle=1;shape=mxgraph.aws4.user;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="60" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="slack-label" value="via Slack" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="450" width="80" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- EDGES -->
+
+        <!-- Developer to Agent -->
+        <mxCell id="e1" value="Slack DM / @mention&#xa;(Socket Mode)" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#232F3E;strokeWidth=2.5;fontStyle=1;fontSize=11;" edge="1" source="developer" target="openclaw-agent" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Agent to LiteLLM -->
+        <mxCell id="e2" value="OpenAI-compatible API" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#E7157B;strokeWidth=2.5;fontStyle=1;fontSize=11;" edge="1" source="openclaw-agent" target="litellm" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- LiteLLM to Guardrail -->
+        <mxCell id="e3" value="Bedrock Converse API" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#01A88D;strokeWidth=2.5;fontStyle=1;fontSize=11;" edge="1" source="litellm" target="guardrail" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Guardrail to Claude -->
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#01A88D;strokeWidth=2.5;" edge="1" source="guardrail" target="claude" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- LiteLLM to PostgreSQL -->
+        <mxCell id="e5" value="Key Store" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#C7131F;strokeWidth=1.5;dashed=1;fontSize=11;" edge="1" source="litellm" target="postgres" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ArgoCD to Agent -->
+        <mxCell id="e6" value="GitOps deploys" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=1;entryDx=0;entryDy=0;strokeColor=#FF6B35;strokeWidth=1.5;dashed=1;fontSize=11;" edge="1" source="argocd" target="openclaw-agent" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- IAM to LiteLLM -->
+        <mxCell id="e7" value="No static keys" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;strokeColor=#DD344C;strokeWidth=1.5;dashed=1;fontSize=11;" edge="1" source="iam" target="litellm" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
