@@ -65,6 +65,8 @@ resource "aws_eks_node_group" "kata" {
 
   instance_types = var.kata_instance_types
 
+  disk_size = 100
+
   labels = {
     "katacontainers.io/kata-runtime" = "true"
   }
