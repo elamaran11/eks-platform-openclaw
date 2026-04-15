@@ -1,7 +1,7 @@
-# Patch to add hostNetwork: true to kata-deploy DaemonSet.
-# The upstream chart doesn't expose hostNetwork as a values key,
-# but kata-deploy needs it to reach the kubelet API on port 10250
-# to check the container runtime version during installation.
+# Patch to add hostNetwork: true + ClusterFirstWithHostNet DNS to kata-deploy DaemonSet.
+# The upstream chart doesn't expose these as values keys.
+# kata-deploy needs hostNetwork to reach the kubelet, and ClusterFirstWithHostNet
+# so that kubernetes.default.svc resolves correctly when hostNetwork is enabled.
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -11,3 +11,4 @@ spec:
   template:
     spec:
       hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
