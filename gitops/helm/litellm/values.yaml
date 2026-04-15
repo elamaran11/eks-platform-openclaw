@@ -17,6 +17,8 @@ litellm-helm:
         secretKeyRef:
           name: litellm-secrets
           key: aws_region
+    - name: DATABASE_URL
+      value: "postgresql://litellm:NoTaGrEaTpAsSwOrD@litellm-postgresql:5432/litellm"
 
   proxy_config:
     model_list:
@@ -56,7 +58,7 @@ litellm-helm:
       failure_callback: ["prometheus"]
       prometheus_url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
 
-  db_url: "sqlite:///litellm.db"
+  db_url: "postgresql://litellm:NoTaGrEaTpAsSwOrD@litellm-postgresql:5432/litellm"
 
   postgresql:
     enabled: false
