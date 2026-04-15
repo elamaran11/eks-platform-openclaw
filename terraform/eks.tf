@@ -36,6 +36,15 @@ module "eks" {
       resolve_conflicts_on_update = "OVERWRITE"
       service_account_role_arn    = aws_iam_role.ebs_csi.arn
     }
+    # VPC CNI for kata managed node group nodes (non-auto-mode)
+    # Auto Mode manages CNI internally for auto-mode nodes at a lower level;
+    # aws-node running on them too is harmless. Kata nodes need this addon
+    # to become Ready before the node group creation times out.
+    vpc-cni = {
+      most_recent                 = true
+      resolve_conflicts_on_create = "OVERWRITE"
+      resolve_conflicts_on_update = "OVERWRITE"
+    }
   }
 
   # Use EKS Access Entries API (GA 2024) — auditable via CloudTrail, no aws-auth ConfigMap
