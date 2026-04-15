@@ -24,7 +24,7 @@ litellm-helm:
     model_list:
       - model_name: claude-sonnet-4-6
         litellm_params:
-          model: bedrock/us.anthropic.claude-sonnet-4-6-20251001-v1:0
+          model: bedrock/us.anthropic.claude-sonnet-4-6
           aws_region_name: "os.environ/AWS_REGION"
           guardrailConfig:
             guardrailIdentifier: "os.environ/BEDROCK_GUARDRAIL_ID"
@@ -33,7 +33,7 @@ litellm-helm:
 
       - model_name: claude-opus-4-6
         litellm_params:
-          model: bedrock/us.anthropic.claude-opus-4-6-20250514-v1:0
+          model: bedrock/us.anthropic.claude-opus-4-20250514-v1:0
           aws_region_name: "os.environ/AWS_REGION"
           guardrailConfig:
             guardrailIdentifier: "os.environ/BEDROCK_GUARDRAIL_ID"
@@ -42,7 +42,7 @@ litellm-helm:
 
       - model_name: claude-haiku-4-5
         litellm_params:
-          model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+          model: bedrock/us.anthropic.claude-3-5-haiku-20241022-v1:0
           aws_region_name: "os.environ/AWS_REGION"
           guardrailConfig:
             guardrailIdentifier: "os.environ/BEDROCK_GUARDRAIL_ID"
