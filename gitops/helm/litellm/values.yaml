@@ -24,6 +24,18 @@ litellm-helm:
           key: api_key
     - name: LITELLM_DROP_PARAMS
       value: "true"
+    - name: DATABASE_URL
+      value: "postgresql://litellm:NoTaGrEaTpAsSwOrD@litellm-postgresql:5432/litellm"
+
+  volumes:
+    - name: sitecustomize
+      configMap:
+        name: litellm-sitecustomize
+
+  volumeMounts:
+    - name: sitecustomize
+      mountPath: /usr/lib/python3.13/sitecustomize.py
+      subPath: sitecustomize.py
 
   proxy_config:
     model_list:
