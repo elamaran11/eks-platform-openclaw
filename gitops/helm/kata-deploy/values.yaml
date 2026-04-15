@@ -1,8 +1,7 @@
 kata-deploy:
   image:
-    reference: public.ecr.aws/t6v6o5d5/kube-prometheus
-    tag: kata-deploy-3.27.0
-  hostNetwork: true
+    reference: quay.io/kata-containers/kata-deploy
+    tag: "3.27.0"
   nodeSelector:
     katacontainers.io/kata-runtime: "true"
   tolerations:
