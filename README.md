@@ -142,7 +142,7 @@ Claw-bot connects to Slack via Socket Mode — no public endpoint or ingress req
 - **DM the bot** — send any message directly to Claw-bot for a private conversation
 - **Mention in a channel** — `@Claw-bot <your prompt>` to invoke it in a shared channel
 - The bot responds in-thread, keeping channels clean
-- Each conversation runs inside an isolated Kata VM — the agent has no access to other sessions
+- The bot runs inside a Kata QEMU VM — hardware-isolated from the host and other cluster workloads
 
 ---
 
