@@ -132,6 +132,20 @@ kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
 
 ---
 
+## Slack integration
+
+Claw-bot connects to Slack via Socket Mode — no public endpoint or ingress required. Once deployed, you can interact with it directly from any Slack channel or DM.
+
+![Claw-bot in Slack](generated-diagrams/claw-bot-Slack.png)
+
+**How to interact:**
+- **DM the bot** — send any message directly to Claw-bot for a private conversation
+- **Mention in a channel** — `@Claw-bot <your prompt>` to invoke it in a shared channel
+- The bot responds in-thread, keeping channels clean
+- Each conversation runs inside an isolated Kata VM — the agent has no access to other sessions
+
+---
+
 ## Slack app setup
 
 1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps)
