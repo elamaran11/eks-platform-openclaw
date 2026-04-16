@@ -1,4 +1,4 @@
-# OpenClaw on EKS
+# EKS Platform for OpenClaw
 
 **Production-grade AI agents with hardware-level sandbox isolation on Amazon EKS.**
 
