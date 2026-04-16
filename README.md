@@ -4,7 +4,7 @@
 
 Every agent conversation runs inside a Kata Containers QEMU virtual machine on bare-metal EC2. Not just a container — an actual VM with its own kernel. Agents connect to Slack, reason with Claude via AWS Bedrock, and are deployed entirely through GitOps.
 
-![Architecture](generated-diagrams/openclaw-architecture.png)
+![Architecture](generated-diagrams/openclaw-architecture-v2.png)
 
 ---
 
