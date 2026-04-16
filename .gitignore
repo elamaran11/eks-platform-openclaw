@@ -33,7 +33,7 @@ terraform/*.tfvars.json
 *~
 
 # Generated diagrams (regenerate with diagram tool)
-generated-diagrams/
+# generated-diagrams/ — tracked so images render in GitHub README
 
 # Logs
 *.log
