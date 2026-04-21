@@ -91,13 +91,9 @@ spec:
                       "models": [
                         {
                           "id": "claude-sonnet-4-6",
-                          "name": "Claude Sonnet 4.6",
-                          "contextWindow": 200000,
-                          "maxTokens": 8192
-                        },
-                        {
-                          "id": "claude-opus-4",
-                          "name": "Claude Opus 4 (for document analysis)",
+                          "name": "Claude Sonnet 4.6 (Bedrock)",
+                          "reasoning": true,
+                          "input": ["text", "image"],
                           "contextWindow": 200000,
                           "maxTokens": 8192
                         }
@@ -108,23 +104,20 @@ spec:
                 "agents": {
                   "defaults": {
                     "model": { "primary": "litellm/claude-sonnet-4-6" },
-                    "workspace": "/workspace",
-                    "systemPromptFile": "/etc/openclaw/system-prompt.md"
+                    "workspace": "/workspace"
                   }
-                },
-                "tools": {
-                  "python": { "enabled": true, "timeout": 30 },
-                  "fs":     { "enabled": true, "root": "/workspace" },
-                  "web":    { "enabled": false }
                 },
                 "gateway": {
                   "port": 18789,
                   "mode": "local",
-                  "bind": "lan"
+                  "bind": "lan",
+                  "controlUi": {
+                    "dangerouslyAllowHostHeaderOriginFallback": true
+                  }
                 }
               }
               EOF
-              exec node dist/index.js gateway --bind=lan --port 18789 --verbose
+              exec node dist/index.js gateway --bind=lan --port 18789 --allow-unconfigured --verbose
           ports:
             - name: gateway
               containerPort: 18789
