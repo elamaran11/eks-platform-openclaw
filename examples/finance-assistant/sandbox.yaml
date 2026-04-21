@@ -169,9 +169,9 @@ spec:
             - name: SYSTEM_PROMPT_FILE
               value: /etc/openclaw/system-prompt.md
             - name: OPENCLAW_CMD
-              value: node
+              value: openclaw
             - name: OPENCLAW_ARGS
-              value: /home/node/dist/index.js
+              value: ""
             - name: HOME
               value: /tmp/adapter-home
           command:
@@ -184,10 +184,9 @@ spec:
                 sleep 1
               done
               mkdir -p "$HOME/.openclaw"
-              # Reuse the openclaw sibling's config so sessions, models, auth
-              # are identical — the adapter and gateway share the same agent.
-              ln -sf /home/node/.openclaw/openclaw.json "$HOME/.openclaw/openclaw.json" 2>/dev/null || \
-                cp /home/node/.openclaw/openclaw.json "$HOME/.openclaw/openclaw.json"
+              # Reuse the openclaw sibling config so both containers talk
+              # to the same agent, same workspace, same auth.
+              cp /home/node/.openclaw/openclaw.json "$HOME/.openclaw/openclaw.json"
               exec node /adapter/server.js
           ports:
             - { name: adapter, containerPort: 18790, protocol: TCP }

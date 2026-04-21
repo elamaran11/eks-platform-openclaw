@@ -14,8 +14,9 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 
 const PORT = parseInt(process.env.PORT || "18790", 10);
-const OPENCLAW_CMD = process.env.OPENCLAW_CMD || "node";
-const OPENCLAW_ARGS = (process.env.OPENCLAW_ARGS || "/home/node/dist/index.js").split(" ");
+const OPENCLAW_CMD = process.env.OPENCLAW_CMD || "openclaw";
+const rawArgs = process.env.OPENCLAW_ARGS || "";
+const OPENCLAW_ARGS = rawArgs.trim() ? rawArgs.trim().split(/\s+/) : [];
 const SYSTEM_PROMPT_FILE = process.env.SYSTEM_PROMPT_FILE || "/etc/openclaw/system-prompt.md";
 const DEFAULT_TIMEOUT_MS = 120000;
 
