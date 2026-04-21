@@ -15,28 +15,30 @@ spec:
     spec:
       automountServiceAccountToken: false
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        runAsUser: 101
+        runAsGroup: 101
         runAsNonRoot: true
-        fsGroup: 1000
+        fsGroup: 101
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: ui
-          # Replaced post-`terraform apply` via scripts/render-finance-ui.sh
-          image: 940019131157.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.1.0
+          # nginx reverse proxy fronting OpenClaw Control UI (finance-sandbox:18789)
+          # Replaced via scripts/render-finance-ui.sh — DO NOT hand-edit
+          image: 940019131157.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.2.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
               protocol: TCP
           env:
-            - name: SANDBOX_URL
-              value: http://finance-sandbox.finance-assistant.svc.cluster.local:18789
-            - name: NODE_ENV
-              value: production
+            - name: GATEWAY_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-gateway-auth
+                  key: token
           resources:
-            requests: { cpu: 100m, memory: 256Mi }
-            limits:   { cpu: 500m, memory: 512Mi }
+            requests: { cpu: 50m, memory: 32Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -45,23 +47,19 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           volumeMounts:
-            - { name: cache, mountPath: /app/.next/cache }
-            - { name: tmp,   mountPath: /tmp }
+            - { name: tmp,          mountPath: /tmp }
+            - { name: nginx-cache,  mountPath: /var/cache/nginx }
           readinessProbe:
-            httpGet: { path: /, port: 3000 }
-            initialDelaySeconds: 15
+            httpGet: { path: /healthz, port: 3000 }
+            initialDelaySeconds: 3
             periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 6
           livenessProbe:
-            httpGet: { path: /, port: 3000 }
-            initialDelaySeconds: 60
+            httpGet: { path: /healthz, port: 3000 }
+            initialDelaySeconds: 10
             periodSeconds: 20
-            timeoutSeconds: 5
-            failureThreshold: 3
       volumes:
-        - { name: cache, emptyDir: {} }
-        - { name: tmp,   emptyDir: {} }
+        - { name: tmp,         emptyDir: {} }
+        - { name: nginx-cache, emptyDir: {} }
 ---
 apiVersion: v1
 kind: Service

@@ -66,6 +66,11 @@ spec:
                 secretKeyRef:
                   name: finance-litellm-key
                   key: api-key
+            - name: GATEWAY_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-gateway-auth
+                  key: token
             - name: WORKSPACE_DIR
               value: /workspace
             - name: SYSTEM_PROMPT_FILE
@@ -111,6 +116,10 @@ spec:
                   "port": 18789,
                   "mode": "local",
                   "bind": "lan",
+                  "auth": {
+                    "mode": "token",
+                    "token": "${GATEWAY_AUTH_TOKEN}"
+                  },
                   "controlUi": {
                     "dangerouslyAllowHostHeaderOriginFallback": true
                   }
