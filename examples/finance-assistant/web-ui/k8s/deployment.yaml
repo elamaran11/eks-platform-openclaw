@@ -19,6 +19,8 @@ spec:
         runAsGroup: 1000
         runAsNonRoot: true
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: ui
           # Replaced post-`terraform apply` via scripts/render-finance-ui.sh
@@ -26,6 +28,7 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
+              protocol: TCP
           env:
             - name: SANDBOX_URL
               value: http://finance-sandbox.finance-assistant.svc.cluster.local:18789
@@ -37,7 +40,10 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
+            runAsNonRoot: true
             capabilities: { drop: [ALL] }
+            seccompProfile:
+              type: RuntimeDefault
           volumeMounts:
             - { name: cache, mountPath: /app/.next/cache }
             - { name: tmp,   mountPath: /tmp }

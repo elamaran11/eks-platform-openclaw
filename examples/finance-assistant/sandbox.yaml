@@ -124,6 +124,7 @@ spec:
           ports:
             - name: gateway
               containerPort: 18789
+              protocol: TCP
           volumeMounts:
             - { name: workspace,       mountPath: /workspace }
             - { name: system-prompt,   mountPath: /etc/openclaw, readOnly: true }
