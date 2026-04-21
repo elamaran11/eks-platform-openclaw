@@ -91,6 +91,10 @@ spec:
               [ -f /workspace/snapshot.md ] || touch /workspace/snapshot.md
               [ -f /workspace/decisions.md ] || touch /workspace/decisions.md
               [ -f /workspace/questions.md ] || touch /workspace/questions.md
+              # boot-md hook will load this into the agent on gateway startup,
+              # so the finance persona is injected once per gateway life, not
+              # per turn. Refresh on every restart in case the ConfigMap changed.
+              cp /etc/openclaw/system-prompt.md /workspace/BOOT.md
               cat > /home/node/.openclaw/openclaw.json <<'EOF'
               {
                 "models": {

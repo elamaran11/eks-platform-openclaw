@@ -9,7 +9,6 @@ data:
     // as the openclaw gateway. Calls `openclaw agent --local` per turn.
     const http = require("http");
     const { spawn } = require("child_process");
-    const fs = require("fs");
 
     const PORT = parseInt(process.env.PORT || "18790", 10);
     const OPENCLAW_CMD = process.env.OPENCLAW_CMD || "openclaw";
@@ -18,21 +17,17 @@ data:
     const SYSTEM_PROMPT_FILE = process.env.SYSTEM_PROMPT_FILE || "/etc/openclaw/system-prompt.md";
     const DEFAULT_TIMEOUT_MS = 300000;
 
-    let SYSTEM_PROMPT = "";
-    try {
-      SYSTEM_PROMPT = fs.readFileSync(SYSTEM_PROMPT_FILE, "utf8").trim();
-      console.log(`[adapter] loaded system prompt (${SYSTEM_PROMPT.length} chars)`);
-    } catch (e) {
-      console.warn(`[adapter] no system prompt at ${SYSTEM_PROMPT_FILE}: ${e.message}`);
-    }
-
-    const primedSessions = new Set();
+    // System prompt is no longer injected per-turn — it lives in
+    // /workspace/BOOT.md and is loaded into the gateway on startup by the
+    // openclaw boot-md hook. Adapter sends only the user message.
+    const primedSessions = new Set(); // retained for future use
 
     function runOpenclaw(sessionId, message) {
       return new Promise((resolve, reject) => {
+        // Use warm gateway (omit --local) so we skip the agent cold start.
         const args = [
           ...OPENCLAW_ARGS,
-          "agent", "--local",
+          "agent",
           "--session-id", sessionId,
           "--thinking", "off",
           "--json",
@@ -100,10 +95,7 @@ data:
               return res.end(JSON.stringify({ error: "message required" }));
             }
             let payload = message;
-            if (SYSTEM_PROMPT && !primedSessions.has(sessionId)) {
-              payload = `SYSTEM INSTRUCTIONS:\n${SYSTEM_PROMPT}\n\n---\n\nUSER:\n${message}`;
-              primedSessions.add(sessionId);
-            }
+            // System prompt is in BOOT.md; don't prepend on every turn.
             res.writeHead(200, {
               "Content-Type": "text/event-stream",
               "Cache-Control": "no-cache, no-transform",

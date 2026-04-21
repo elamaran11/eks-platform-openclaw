@@ -11,31 +11,25 @@
 
 const http = require("http");
 const { spawn } = require("child_process");
-const fs = require("fs");
 
 const PORT = parseInt(process.env.PORT || "18790", 10);
 const OPENCLAW_CMD = process.env.OPENCLAW_CMD || "openclaw";
 const rawArgs = process.env.OPENCLAW_ARGS || "";
 const OPENCLAW_ARGS = rawArgs.trim() ? rawArgs.trim().split(/\s+/) : [];
-const SYSTEM_PROMPT_FILE = process.env.SYSTEM_PROMPT_FILE || "/etc/openclaw/system-prompt.md";
 const DEFAULT_TIMEOUT_MS = 300000;
 
-let SYSTEM_PROMPT = "";
-try {
-  SYSTEM_PROMPT = fs.readFileSync(SYSTEM_PROMPT_FILE, "utf8").trim();
-  console.log(`[adapter] loaded system prompt (${SYSTEM_PROMPT.length} chars)`);
-} catch (e) {
-  console.warn(`[adapter] no system prompt at ${SYSTEM_PROMPT_FILE}: ${e.message}`);
-}
-
-// Track which sessions have already received the system prompt injection
+// System prompt is mounted at /etc/openclaw/system-prompt.md and copied to
+// /workspace/BOOT.md by the openclaw container; the boot-md hook loads it
+// into the gateway once per gateway lifetime so we do not re-prepend it.
 const primedSessions = new Set();
 
 function runOpenclaw(sessionId, message) {
   return new Promise((resolve, reject) => {
+    // No --local: call the already-warm gateway instead of cold-starting
+    // a fresh agent process per turn. Cuts ~15s off every response.
     const args = [
       ...OPENCLAW_ARGS,
-      "agent", "--local",
+      "agent",
       "--session-id", sessionId,
       "--thinking", "off",
       "--json",
@@ -111,10 +105,8 @@ const server = http.createServer(async (req, res) => {
         }
 
         let payload = message;
-        if (SYSTEM_PROMPT && !primedSessions.has(sessionId)) {
-          payload = `SYSTEM INSTRUCTIONS:\n${SYSTEM_PROMPT}\n\n---\n\nUSER:\n${message}`;
-          primedSessions.add(sessionId);
-        }
+        // System prompt is loaded by the boot-md hook at gateway startup
+        // (from /workspace/BOOT.md). Do not prepend per turn.
 
         res.writeHead(200, {
           "Content-Type": "text/event-stream",
