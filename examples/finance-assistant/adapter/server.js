@@ -57,12 +57,14 @@ function runOpenclaw(sessionId, message) {
     child.stderr.on("data", (d) => { stderr += d.toString(); });
     child.on("close", (code) => {
       clearTimeout(timer);
-      if (code !== 0) return reject(new Error(`openclaw exit ${code}: ${stderr.slice(0, 500)}`));
-      // Slice from first "{" to capture JSON payload only (CLI prints banner lines first)
-      const jsonStart = stdout.indexOf("{\n");
-      if (jsonStart < 0) return reject(new Error(`no JSON in output: ${stdout.slice(0, 300)}`));
+      const combined = stdout + stderr;
+      if (code !== 0 && !combined.includes('"payloads"')) {
+        return reject(new Error(`openclaw exit ${code}: ${stderr.slice(0, 500)}`));
+      }
+      const jsonStart = combined.indexOf("{\n");
+      if (jsonStart < 0) return reject(new Error(`no JSON: ${combined.slice(0, 300)}`));
       try {
-        const parsed = JSON.parse(stdout.slice(jsonStart));
+        const parsed = JSON.parse(combined.slice(jsonStart));
         const text = parsed?.payloads?.[0]?.text ?? "";
         const stopReason = parsed?.meta?.stopReason ?? "unknown";
         resolve({ text, stopReason, parsed });
