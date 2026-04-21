@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: finance-sandbox
+  namespace: finance-assistant
+---
+apiVersion: agents.x-k8s.io/v1alpha1
+kind: Sandbox
+metadata:
+  name: finance-assistant
+  namespace: finance-assistant
+spec:
+  podTemplate:
+    metadata:
+      labels:
+        app: finance-sandbox
+    spec:
+      runtimeClassName: kata-qemu
+      serviceAccountName: finance-sandbox
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+      nodeSelector:
+        katacontainers.io/kata-runtime: "true"
+      tolerations:
+        - key: kata
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: finance-workspace
+        - name: system-prompt
+          configMap:
+            name: finance-system-prompt
+        - name: openclaw-config
+          emptyDir: {}
+      containers:
+        - name: openclaw
+          image: ghcr.io/openclaw/openclaw:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2
+              memory: 4Gi
+          env:
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: finance-litellm-key
+                  key: api-key
+            - name: WORKSPACE_DIR
+              value: /workspace
+            - name: SYSTEM_PROMPT_FILE
+              value: /etc/openclaw/system-prompt.md
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              mkdir -p /workspace/scenarios /workspace/inbox
+              [ -f /workspace/goals.md ]    || touch /workspace/goals.md
+              [ -f /workspace/snapshot.md ] || touch /workspace/snapshot.md
+              [ -f /workspace/decisions.md ] || touch /workspace/decisions.md
+              [ -f /workspace/questions.md ] || touch /workspace/questions.md
+              cat > /home/node/.openclaw/openclaw.json <<'EOF'
+              {
+                "models": {
+                  "providers": {
+                    "litellm": {
+                      "baseUrl": "http://litellm.litellm.svc.cluster.local:4000",
+                      "apiKey": "${LITELLM_API_KEY}",
+                      "api": "openai-completions",
+                      "models": [
+                        {
+                          "id": "claude-sonnet-4-6",
+                          "name": "Claude Sonnet 4.6",
+                          "contextWindow": 200000,
+                          "maxTokens": 8192
+                        },
+                        {
+                          "id": "claude-opus-4",
+                          "name": "Claude Opus 4 (for document analysis)",
+                          "contextWindow": 200000,
+                          "maxTokens": 8192
+                        }
+                      ]
+                    }
+                  }
+                },
+                "agents": {
+                  "defaults": {
+                    "model": { "primary": "litellm/claude-sonnet-4-6" },
+                    "workspace": "/workspace",
+                    "systemPromptFile": "/etc/openclaw/system-prompt.md"
+                  }
+                },
+                "tools": {
+                  "python": { "enabled": true, "timeout": 30 },
+                  "fs":     { "enabled": true, "root": "/workspace" },
+                  "web":    { "enabled": false }
+                },
+                "gateway": {
+                  "port": 18789,
+                  "mode": "local",
+                  "bind": "lan"
+                }
+              }
+              EOF
+              exec node dist/index.js gateway --bind=lan --port 18789 --verbose
+          ports:
+            - name: gateway
+              containerPort: 18789
+          volumeMounts:
+            - { name: workspace,       mountPath: /workspace }
+            - { name: system-prompt,   mountPath: /etc/openclaw, readOnly: true }
+            - { name: openclaw-config, mountPath: /home/node/.openclaw }
+          readinessProbe:
+            tcpSocket: { port: 18789 }
+            initialDelaySeconds: 10
+          livenessProbe:
+            tcpSocket: { port: 18789 }
+            initialDelaySeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finance-sandbox
+  namespace: finance-assistant
+spec:
+  selector:
+    app: finance-sandbox
+  ports:
+    - name: gateway
+      port: 18789
+      targetPort: 18789

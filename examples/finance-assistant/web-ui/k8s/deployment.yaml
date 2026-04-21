@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finance-ui
+  namespace: finance-assistant
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: finance-ui
+  template:
+    metadata:
+      labels:
+        app: finance-ui
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+      containers:
+        - name: ui
+          # Replaced post-`terraform apply` via scripts/render-finance-ui.sh
+          image: 940019131157.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: SANDBOX_URL
+              value: http://finance-sandbox.finance-assistant.svc.cluster.local:18789
+            - name: NODE_ENV
+              value: production
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: cache, mountPath: /app/.next/cache }
+            - { name: tmp,   mountPath: /tmp }
+          readinessProbe:
+            httpGet: { path: /, port: 3000 }
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: { path: /, port: 3000 }
+            initialDelaySeconds: 15
+      volumes:
+        - { name: cache, emptyDir: {} }
+        - { name: tmp,   emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finance-ui
+  namespace: finance-assistant
+spec:
+  selector:
+    app: finance-ui
+  ports:
+    - port: 80
+      targetPort: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: finance-ui
+  namespace: finance-assistant
+  annotations:
+    # AWS Load Balancer Controller (ships with EKS Auto Mode)
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: WILDCARD_CERT_ARN_PLACEHOLDER
+    # Cognito auth (values substituted post-`terraform apply`)
+    alb.ingress.kubernetes.io/auth-type: cognito
+    alb.ingress.kubernetes.io/auth-idp-cognito: |
+      {
+        "UserPoolArn": "arn:aws:cognito-idp:us-west-2:940019131157:userpool/us-west-2_Gpb9hjoLH",
+        "UserPoolClientId": "3uelp9pbba5ijnph9ej03jclvi",
+        "UserPoolDomain": "openclaw-finance-940019131157"
+      }
+    alb.ingress.kubernetes.io/auth-scope: "openid email profile"
+    alb.ingress.kubernetes.io/auth-session-cookie: AWSELBAuthSessionCookie
+    alb.ingress.kubernetes.io/auth-session-timeout: '3600'
+    # external-dns picks up this host from the rule below
+    external-dns.alpha.kubernetes.io/hostname: finassist.elamaras.people.aws.dev
+spec:
+  ingressClassName: alb
+  rules:
+    - host: finassist.elamaras.people.aws.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: finance-ui
+                port:
+                  number: 80
