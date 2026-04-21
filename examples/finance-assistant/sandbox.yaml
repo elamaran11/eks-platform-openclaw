@@ -95,7 +95,7 @@ spec:
                       "api": "openai-completions",
                       "models": [
                         {
-                          "id": "bedrock/us.anthropic.claude-sonnet-4-6-20251001-v1:0",
+                          "id": "claude-sonnet-4-6",
                           "name": "Claude Sonnet 4.6 (Bedrock)",
                           "reasoning": true,
                           "input": ["text", "image"],
@@ -108,7 +108,7 @@ spec:
                 },
                 "agents": {
                   "defaults": {
-                    "model": { "primary": "litellm/bedrock/us.anthropic.claude-sonnet-4-6-20251001-v1:0" },
+                    "model": { "primary": "litellm/claude-sonnet-4-6" },
                     "workspace": "/workspace"
                   }
                 },
