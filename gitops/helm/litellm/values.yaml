@@ -42,31 +42,18 @@ litellm-helm:
           model: bedrock/us.anthropic.claude-sonnet-4-6
           aws_region_name: "os.environ/AWS_REGION"
           drop_params: true
-          # Bedrock/Anthropic prompt caching: mark the system message as
-          # cacheable so the 28k-char agent system prompt is cached for ~5
-          # min per virtual-key. First turn pays full cost; subsequent turns
-          # in the window are dramatically faster + cheaper.
-          cache_control_injection_points:
-            - location: message
-              role: system
 
       - model_name: claude-opus-4-6
         litellm_params:
           model: bedrock/us.anthropic.claude-opus-4-20250514-v1:0
           aws_region_name: "os.environ/AWS_REGION"
           drop_params: true
-          cache_control_injection_points:
-            - location: message
-              role: system
 
       - model_name: claude-haiku-4-5
         litellm_params:
           model: bedrock/us.anthropic.claude-3-5-haiku-20241022-v1:0
           aws_region_name: "os.environ/AWS_REGION"
           drop_params: true
-          cache_control_injection_points:
-            - location: message
-              role: system
 
     general_settings:
       default_model: claude-sonnet-4-6
