@@ -18,7 +18,7 @@ const OPENCLAW_CMD = process.env.OPENCLAW_CMD || "openclaw";
 const rawArgs = process.env.OPENCLAW_ARGS || "";
 const OPENCLAW_ARGS = rawArgs.trim() ? rawArgs.trim().split(/\s+/) : [];
 const SYSTEM_PROMPT_FILE = process.env.SYSTEM_PROMPT_FILE || "/etc/openclaw/system-prompt.md";
-const DEFAULT_TIMEOUT_MS = 120000;
+const DEFAULT_TIMEOUT_MS = 300000;
 
 let SYSTEM_PROMPT = "";
 try {
@@ -102,6 +102,7 @@ const server = http.createServer(async (req, res) => {
     let body = "";
     req.on("data", (c) => { body += c; });
     req.on("end", async () => {
+      let heartbeat;
       try {
         const { message, sessionId = "web" } = JSON.parse(body || "{}");
         if (!message || typeof message !== "string") {
@@ -109,7 +110,6 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: "message required" }));
         }
 
-        // Prepend system prompt on first turn of a session
         let payload = message;
         if (SYSTEM_PROMPT && !primedSessions.has(sessionId)) {
           payload = `SYSTEM INSTRUCTIONS:\n${SYSTEM_PROMPT}\n\n---\n\nUSER:\n${message}`;
@@ -123,8 +123,12 @@ const server = http.createServer(async (req, res) => {
           "X-Accel-Buffering": "no",
         });
         sseWrite(res, { status: "thinking" });
+        heartbeat = setInterval(() => {
+          try { res.write(": ping\n\n"); } catch {}
+        }, 10000);
 
         const { text, stopReason } = await runOpenclaw(sessionId, payload);
+        clearInterval(heartbeat);
         if (stopReason === "error" || !text) {
           sseWrite(res, { error: text || "agent error", stopReason });
           res.write("data: [DONE]\n\n");
@@ -132,6 +136,7 @@ const server = http.createServer(async (req, res) => {
         }
         await streamReplyAsSse(res, text);
       } catch (e) {
+        clearInterval(heartbeat);
         console.error("[adapter] error:", e.message);
         try {
           sseWrite(res, { error: e.message });

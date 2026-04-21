@@ -100,6 +100,9 @@ metadata:
     alb.ingress.kubernetes.io/auth-session-timeout: '3600'
     # external-dns picks up this host from the rule below
     external-dns.alpha.kubernetes.io/hostname: finassist.elamaras.people.aws.dev
+    # Long inference responses need ALB idle >60s. Heartbeats keep the
+    # stream alive; raise the timeout so the client-side SSE isn't killed.
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=300
 spec:
   ingressClassName: alb
   rules:

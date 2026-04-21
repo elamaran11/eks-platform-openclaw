@@ -16,7 +16,7 @@ data:
     const rawArgs = process.env.OPENCLAW_ARGS || "";
     const OPENCLAW_ARGS = rawArgs.trim() ? rawArgs.trim().split(/\s+/) : [];
     const SYSTEM_PROMPT_FILE = process.env.SYSTEM_PROMPT_FILE || "/etc/openclaw/system-prompt.md";
-    const DEFAULT_TIMEOUT_MS = 120000;
+    const DEFAULT_TIMEOUT_MS = 300000;
 
     let SYSTEM_PROMPT = "";
     try {
@@ -92,6 +92,7 @@ data:
         let body = "";
         req.on("data", (c) => { body += c; });
         req.on("end", async () => {
+          let heartbeat;
           try {
             const { message, sessionId = "web" } = JSON.parse(body || "{}");
             if (!message) {
@@ -110,7 +111,14 @@ data:
               "X-Accel-Buffering": "no",
             });
             sseWrite(res, { status: "thinking" });
+            // Heartbeats every 10s prevent ALB 60s idle timeout from killing
+            // the stream while openclaw is still computing.
+            heartbeat = setInterval(() => {
+              try { res.write(": ping\n\n"); } catch {}
+            }, 10000);
+
             const { text, stopReason } = await runOpenclaw(sessionId, payload);
+            clearInterval(heartbeat);
             if (stopReason === "error" || !text) {
               sseWrite(res, { error: text || "agent error", stopReason });
               res.write("data: [DONE]\n\n");
@@ -118,6 +126,7 @@ data:
             }
             await streamReplyAsSse(res, text);
           } catch (e) {
+            clearInterval(heartbeat);
             console.error("[adapter]", e.message);
             try { sseWrite(res, { error: e.message }); res.write("data: [DONE]\n\n"); res.end(); } catch {}
           }
