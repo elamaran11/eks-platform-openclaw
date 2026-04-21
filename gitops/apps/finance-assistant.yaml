@@ -12,7 +12,7 @@ spec:
     targetRevision: main
     path: examples/finance-assistant
     directory:
-      include: '{workspace-pvc.yaml,networkpolicy.yaml,system-prompt-configmap.yaml,sandbox.yaml}'
+      include: '{workspace-pvc.yaml,networkpolicy.yaml,system-prompt-configmap.yaml,adapter-configmap.yaml,sandbox.yaml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: finance-assistant

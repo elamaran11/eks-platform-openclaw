@@ -41,6 +41,12 @@ spec:
             name: finance-system-prompt
         - name: openclaw-config
           emptyDir: {}
+        - name: adapter-src
+          configMap:
+            name: finance-adapter-src
+            defaultMode: 0555
+        - name: adapter-tmp
+          emptyDir: {}
       containers:
         - name: openclaw
           image: ghcr.io/openclaw/openclaw:latest
@@ -141,6 +147,64 @@ spec:
           livenessProbe:
             tcpSocket: { port: 18789 }
             initialDelaySeconds: 30
+        - name: adapter
+          image: ghcr.io/openclaw/openclaw:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            capabilities: { drop: [ALL] }
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+          env:
+            - name: PORT
+              value: "18790"
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: finance-litellm-key, key: api-key }
+            - name: SYSTEM_PROMPT_FILE
+              value: /etc/openclaw/system-prompt.md
+            - name: OPENCLAW_CMD
+              value: node
+            - name: OPENCLAW_ARGS
+              value: /home/node/dist/index.js
+            - name: HOME
+              value: /tmp/adapter-home
+          command:
+            - sh
+            - -c
+            - |
+              # Wait for openclaw sidecar to have written its config
+              for i in $(seq 1 60); do
+                [ -f /home/node/.openclaw/openclaw.json ] && break
+                sleep 1
+              done
+              mkdir -p "$HOME/.openclaw"
+              # Reuse the openclaw sibling's config so sessions, models, auth
+              # are identical — the adapter and gateway share the same agent.
+              ln -sf /home/node/.openclaw/openclaw.json "$HOME/.openclaw/openclaw.json" 2>/dev/null || \
+                cp /home/node/.openclaw/openclaw.json "$HOME/.openclaw/openclaw.json"
+              exec node /adapter/server.js
+          ports:
+            - { name: adapter, containerPort: 18790, protocol: TCP }
+          volumeMounts:
+            - { name: workspace,       mountPath: /workspace }
+            - { name: system-prompt,   mountPath: /etc/openclaw, readOnly: true }
+            - { name: openclaw-config, mountPath: /home/node/.openclaw }
+            - { name: adapter-src,     mountPath: /adapter, readOnly: true }
+            - { name: adapter-tmp,     mountPath: /tmp/adapter-home }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 18790 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 18790 }
+            initialDelaySeconds: 20
+            periodSeconds: 30
 ---
 apiVersion: v1
 kind: Service
@@ -154,3 +218,6 @@ spec:
     - name: gateway
       port: 18789
       targetPort: 18789
+    - name: adapter
+      port: 18790
+      targetPort: 18790
