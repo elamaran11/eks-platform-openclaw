@@ -49,10 +49,16 @@ spec:
             - { name: tmp,   mountPath: /tmp }
           readinessProbe:
             httpGet: { path: /, port: 3000 }
-            initialDelaySeconds: 5
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           livenessProbe:
             httpGet: { path: /, port: 3000 }
-            initialDelaySeconds: 15
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
       volumes:
         - { name: cache, emptyDir: {} }
         - { name: tmp,   emptyDir: {} }

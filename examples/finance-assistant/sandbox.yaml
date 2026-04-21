@@ -34,8 +34,8 @@ spec:
           effect: NoSchedule
       volumes:
         - name: workspace
-          persistentVolumeClaim:
-            claimName: finance-workspace
+          emptyDir:
+            sizeLimit: 2Gi
         - name: system-prompt
           configMap:
             name: finance-system-prompt
