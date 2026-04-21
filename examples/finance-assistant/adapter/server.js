@@ -51,20 +51,26 @@ function runOpenclaw(sessionId, message) {
     child.stderr.on("data", (d) => { stderr += d.toString(); });
     child.on("close", (code) => {
       clearTimeout(timer);
-      const combined = stdout + stderr;
-      if (code !== 0 && !combined.includes('"payloads"')) {
-        return reject(new Error(`openclaw exit ${code}: ${stderr.slice(0, 500)}`));
+      const candidates = [stdout, stderr];
+      for (const src of candidates) {
+        const jsonStart = src.indexOf("{\n");
+        if (jsonStart < 0) continue;
+        try {
+          const parsed = JSON.parse(src.slice(jsonStart));
+          const payloads = parsed?.result?.payloads ?? parsed?.payloads;
+          if (!payloads) continue;
+          const text = payloads?.[0]?.text ?? "";
+          const stopReason = parsed?.result?.meta?.stopReason
+            ?? parsed?.meta?.stopReason
+            ?? parsed?.status
+            ?? "unknown";
+          return resolve({ text, stopReason, parsed });
+        } catch { continue; }
       }
-      const jsonStart = combined.indexOf("{\n");
-      if (jsonStart < 0) return reject(new Error(`no JSON: ${combined.slice(0, 300)}`));
-      try {
-        const parsed = JSON.parse(combined.slice(jsonStart));
-        const text = parsed?.payloads?.[0]?.text ?? "";
-        const stopReason = parsed?.meta?.stopReason ?? "unknown";
-        resolve({ text, stopReason, parsed });
-      } catch (e) {
-        reject(new Error(`JSON parse failed: ${e.message}`));
-      }
+      console.error(`[adapter] openclaw exit ${code}`);
+      console.error(`[adapter] stdout(${stdout.length}):`, stdout.slice(0, 500));
+      console.error(`[adapter] stderr(${stderr.length}):`, stderr.slice(0, 500));
+      reject(new Error(`openclaw exit ${code}; stdout=${stdout.length}B stderr=${stderr.length}B`));
     });
   });
 }

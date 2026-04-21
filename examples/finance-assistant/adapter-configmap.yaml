@@ -49,22 +49,29 @@ data:
         child.stderr.on("data", (d) => { stderr += d.toString(); });
         child.on("close", (code) => {
           clearTimeout(timer);
-          // The openclaw CLI writes its structured --json output to stderr
-          // and keeps stdout empty; try stdout first, then fall back to stderr.
-          const combined = stdout + stderr;
-          if (code !== 0 && !combined.includes('"payloads"')) {
-            return reject(new Error(`openclaw exit ${code}: ${stderr.slice(0, 500)}`));
+          // Try stdout first (warm gateway path), then stderr (--local path).
+          // Warm path: {result:{payloads:[{text}]},status:"ok"}
+          // --local:   {payloads:[{text}],meta:{...}}
+          const candidates = [stdout, stderr];
+          for (const src of candidates) {
+            const jsonStart = src.indexOf("{\n");
+            if (jsonStart < 0) continue;
+            try {
+              const parsed = JSON.parse(src.slice(jsonStart));
+              const payloads = parsed?.result?.payloads ?? parsed?.payloads;
+              if (!payloads) continue;
+              const text = payloads?.[0]?.text ?? "";
+              const stopReason = parsed?.result?.meta?.stopReason
+                ?? parsed?.meta?.stopReason
+                ?? parsed?.status
+                ?? "unknown";
+              return resolve({ text, stopReason });
+            } catch { continue; }
           }
-          const jsonStart = combined.indexOf("{\n");
-          if (jsonStart < 0) return reject(new Error(`no JSON: ${combined.slice(0, 300)}`));
-          try {
-            const parsed = JSON.parse(combined.slice(jsonStart));
-            const text = parsed?.payloads?.[0]?.text ?? "";
-            const stopReason = parsed?.meta?.stopReason ?? "unknown";
-            resolve({ text, stopReason });
-          } catch (e) {
-            reject(new Error(`JSON parse failed: ${e.message}`));
-          }
+          console.error(`[adapter] openclaw exit ${code}`);
+          console.error(`[adapter] stdout(${stdout.length}):`, stdout.slice(0, 500));
+          console.error(`[adapter] stderr(${stderr.length}):`, stderr.slice(0, 500));
+          reject(new Error(`openclaw exit ${code}; stdout=${stdout.length}B stderr=${stderr.length}B`));
         });
       });
     }
