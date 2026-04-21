@@ -166,6 +166,9 @@ spec:
             - name: LITELLM_API_KEY
               valueFrom:
                 secretKeyRef: { name: finance-litellm-key, key: api-key }
+            - name: GATEWAY_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef: { name: openclaw-gateway-auth, key: token }
             - name: SYSTEM_PROMPT_FILE
               value: /etc/openclaw/system-prompt.md
             - name: OPENCLAW_CMD
