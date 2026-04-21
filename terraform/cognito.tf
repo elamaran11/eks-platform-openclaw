@@ -1,11 +1,16 @@
 # Cognito user pool — fronts the finance-assistant UI via ALB auth.
-# Single-user, single-domain. No social providers, no self-signup.
+# Self-signup is allowed but the PreSignUp Lambda rejects any email
+# whose domain isn't exactly @amazon.com.
 
 resource "aws_cognito_user_pool" "finance" {
   name = "${var.project_name}-finance-users"
 
   admin_create_user_config {
-    allow_admin_create_user_only = true
+    allow_admin_create_user_only = false
+  }
+
+  lambda_config {
+    pre_sign_up = aws_lambda_function.presignup.arn
   }
 
   password_policy {
