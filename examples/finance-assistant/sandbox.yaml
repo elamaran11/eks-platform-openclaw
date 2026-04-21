@@ -23,6 +23,8 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
         runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       nodeSelector:
         katacontainers.io/kata-runtime: "true"
       tolerations:
@@ -49,6 +51,8 @@ spec:
             runAsNonRoot: true
             capabilities:
               drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
           resources:
             requests:
               cpu: 500m
