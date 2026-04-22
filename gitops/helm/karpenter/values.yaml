@@ -1,0 +1,37 @@
+# Wrapper values for upstream Karpenter chart
+# Cluster-specific values are injected by ArgoCD Application via helm.parameters
+# (see gitops/apps/karpenter.yaml). Nothing secret lives here.
+
+karpenter:
+  # Controller runs on Auto Mode system nodes — small footprint
+  replicas: 2
+
+  serviceAccount:
+    # Pod Identity binding is created by Terraform module "karpenter".
+    # Upstream chart still needs the ServiceAccount to exist with this name.
+    name: karpenter
+    create: true
+
+  settings:
+    # clusterName / interruptionQueue are set per-cluster via ArgoCD helm.parameters
+    featureGates:
+      spotToSpotConsolidation: true
+
+  controller:
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+  # Keep Karpenter off the Kata nodes it's provisioning (and off the kata MNG)
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: eks.amazonaws.com/compute-type
+                operator: In
+                values: ["auto"]

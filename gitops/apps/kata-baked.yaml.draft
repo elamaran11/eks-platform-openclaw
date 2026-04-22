@@ -1,0 +1,36 @@
+# ArgoCD Application — baked-AMI Kata NodePool + EC2NodeClass + RuntimeClass
+#
+# WAVE 0 STATE: automated sync is DISABLED. This sits in Git so reviewers can
+# inspect the NodePool/EC2NodeClass YAML, but ArgoCD will not deploy until
+# Wave 1 step B3 flips this on.
+#
+# Prerequisites before enabling sync:
+#   1. Terraform karpenter module applied (IAM role, Pod Identity, subnet tags)
+#   2. SSM /openclaw/kata/ami-id populated with a real AMI from Packer
+#   3. Karpenter controller Application already synced and healthy (B2)
+#
+# Isolated label/taint (kata-pool=baked-clh / kata-baked=true) and RuntimeClass
+# name (kata-clh-baked) guarantee this cannot accidentally schedule existing
+# workloads. Existing kata-deploy path stays 100% untouched.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kata-baked
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/elamaran11/eks-platform-openclaw
+    targetRevision: HEAD
+    path: gitops/helm/kata-baked
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    # automated: {}    # <-- INTENTIONALLY DISABLED for Wave 0
+    syncOptions:
+      - ServerSideApply=true

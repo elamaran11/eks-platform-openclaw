@@ -1,0 +1,9 @@
+apiVersion: v2
+name: karpenter
+description: Karpenter controller for OpenClaw (wraps upstream chart)
+type: application
+version: 0.1.0
+dependencies:
+  - name: karpenter
+    version: "1.0.8"
+    repository: oci://public.ecr.aws/karpenter

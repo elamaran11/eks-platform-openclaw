@@ -1,0 +1,44 @@
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: kata-baked
+spec:
+  template:
+    metadata:
+      labels:
+        # Isolated label — pods must explicitly opt in via nodeSelector
+        kata-pool: {{ .Values.pool.label | quote }}
+    spec:
+      # Isolated taint — kata-deploy MNG uses "kata", this uses "kata-baked"
+      taints:
+        - key: {{ .Values.pool.taintKey | quote }}
+          value: "true"
+          effect: NoSchedule
+
+      requirements:
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values:
+{{- range .Values.pool.instanceTypes }}
+            - {{ . | quote }}
+{{- end }}
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: kata-baked
+
+      expireAfter: 720h
+
+  limits:
+    cpu: {{ .Values.pool.cpuLimit }}
+
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: {{ .Values.pool.consolidateAfter | quote }}

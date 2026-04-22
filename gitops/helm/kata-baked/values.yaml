@@ -1,0 +1,30 @@
+# Per-cluster values for the baked-AMI Kata path.
+# These are overridden by the ArgoCD Application (helm.parameters) with the
+# live outputs from the Terraform karpenter module.
+
+cluster:
+  name: openclaw-eks
+
+karpenter:
+  # IAM role Karpenter-launched nodes assume (Terraform output)
+  nodeRoleName: openclaw-eks-karpenter-node
+
+kata:
+  # SSM parameter holding the Packer-baked AMI ID
+  # EC2NodeClass resolves this via amiSelectorTerms.ssmParameter
+  amiSSMParameter: /openclaw/kata/ami-id
+
+pool:
+  # Isolated names — do NOT collide with existing kata-deploy path
+  label: baked-clh       # node label value for kata-pool
+  taintKey: kata-baked   # taint key (distinct from existing "kata")
+  instanceTypes:
+    - c5.metal
+    - m5.metal
+  cpuLimit: 96           # fleet-wide vCPU cap during Wave 0 (= one c5.metal)
+  consolidateAfter: 30m
+
+runtimeClass:
+  # Distinct from the existing kata-clh RuntimeClass installed by kata-deploy
+  name: kata-clh-baked
+  handler: kata-clh

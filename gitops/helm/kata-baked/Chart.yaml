@@ -1,0 +1,10 @@
+apiVersion: v2
+name: kata-baked
+description: |
+  Karpenter NodePool + EC2NodeClass for baked-AMI Kata nodes, plus an isolated
+  RuntimeClass (kata-clh-baked) for Wave 0/1 testing.
+  Uses distinct label/taint/runtimeclass names so it cannot collide with the
+  existing kata-deploy-based path (label katacontainers.io/kata-runtime,
+  taint kata=true, runtimeclass kata-clh / kata-qemu).
+type: application
+version: 0.1.0
