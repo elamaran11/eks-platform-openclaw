@@ -74,4 +74,7 @@ output "karpenter_service_account" {
 output "kata_ami_id" {
   description = "Baked Kata AMI ID (published by Packer pipeline into SSM)"
   value       = data.aws_ssm_parameter.kata_ami_id.value
+  # SSM parameter values are sensitive by default; AMI ID is not secret but the
+  # type coerces the marker up the chain. Explicit marker required by Terraform.
+  sensitive = true
 }

@@ -34,8 +34,10 @@ if [ "$FILESIZE" -lt 100000000 ]; then
 fi
 
 zstd -d -f kata-static.tar.zst -o kata-static.tar
-sudo tar -xvf kata-static.tar -C /
+echo ">>> Extracting kata-static.tar (quiet — ~40k files)..."
+sudo tar -xf kata-static.tar -C /
 sudo sync
+echo ">>> Extraction done."
 
 # Sanity check
 ls -la /opt/kata/bin/
@@ -89,4 +91,4 @@ sync
 sleep 5
 sync
 
-echo ">>> Kata install complete. Base image = AL2023 EKS-optimized $KUBERNETES_VERSION."
+echo ">>> Kata install complete."
