@@ -1,48 +1,81 @@
-# Wave 0 — local files created, not applied
-#
-# Nothing in this directory tree has touched `openclaw-eks`. Every file is
-# either in Git or .draft / .sh extensions (ignored by ArgoCD).
-#
-# Files produced in Wave 0
-# -------------------------
-# packer/kata-ami.pkr.hcl                              — Packer template (metal-only, CLH default)
-# packer/install-kata.sh                               — Installer run during AMI build
-# packer/ssm-parameter-plan.sh                         — Commands to populate /openclaw/kata/ami-id
-# terraform/karpenter.tf.draft                         — Karpenter IAM/SQS/Pod Identity (not applied)
-# gitops/helm/karpenter/                               — Helm chart wrapping upstream Karpenter
-# gitops/helm/kata-baked/                              — NodePool + EC2NodeClass + isolated RuntimeClass
-# gitops/apps/karpenter.yaml.draft                     — ArgoCD App (automated sync OFF)
-# gitops/apps/kata-baked.yaml.draft                    — ArgoCD App (automated sync OFF)
-#
-# What did NOT change
-# -------------------
-# - terraform/eks.tf                 (Auto Mode + Kata MNG untouched)
-# - terraform/kata.tf                (existing Kata MNG + kube-proxy patch intact)
-# - gitops/helm/kata/                (existing RuntimeClass chart untouched)
-# - gitops/helm/kata-deploy/         (kata-deploy DaemonSet chart untouched)
-# - gitops/apps/kata.yaml            (still syncing)
-# - gitops/apps/kata-deploy.yaml     (still syncing)
-# - Any running workload, DaemonSet, RuntimeClass, or node on the cluster
-#
-# Isolation from existing Kata path
-# ---------------------------------
-# | Dimension        | Existing path              | Wave 0 baked path           |
-# |------------------|----------------------------|-----------------------------|
-# | Node label       | katacontainers.io/kata-... | kata-pool=baked-clh         |
-# | Taint            | kata=true:NoSchedule       | kata-baked=true:NoSchedule  |
-# | RuntimeClass     | kata-qemu / kata-clh       | kata-clh-baked              |
-# | Install path     | kata-deploy DaemonSet      | Packer AMI + nodeadm        |
-# | Node provisioner | EKS Managed Node Group     | Karpenter                   |
-# | Applied today?   | YES (running)              | NO (drafts only)            |
-#
-# Next steps (require user go-ahead — NOT done automatically)
-# -----------------------------------------------------------
-# 1. Run packer/ssm-parameter-plan.sh step 1 (create SSM placeholder)
-# 2. `cd packer && packer init . && packer build .`  (~20 min, ~$0.40 for c5.metal)
-# 3. After successful build, run step 2 of ssm-parameter-plan.sh to publish the real AMI ID
-# 4. `mv terraform/karpenter.tf.draft terraform/karpenter.tf && terraform plan`  (review diff)
-# 5. `terraform apply`  (creates IAM role, SQS, Pod Identity — still no cluster-side change)
-# 6. `mv gitops/apps/karpenter.yaml.draft gitops/apps/karpenter.yaml` + enable automated sync
-# 7. After Karpenter controller Running for 24h with no NodePools:
-#    `mv gitops/apps/kata-baked.yaml.draft gitops/apps/kata-baked.yaml` + enable automated sync
-# 8. Launch smoke-test pod that tolerates kata-baked taint + selects kata-pool=baked-clh
+# Wave status — metal-only Kata via baked AMI + MNG
+
+## Pivot rationale
+
+Wave 0/1 aimed for Karpenter + baked AMI. Blocker discovered at apply verification:
+
+> AWS EKS Auto Mode **does not accept custom AMIs** — the service determines the
+> OS and image. Source: https://docs.aws.amazon.com/eks/latest/userguide/automode-learn-instances.html
+
+Since Auto Mode's embedded Karpenter was already reconciling cluster NodePools
+(`general-purpose`, `system`, plus the Kata `kata-bare-metal-nxfcb` NodeClaim
+from an earlier experiment), installing a second user-managed Karpenter would
+create a split-brain CRD race. AWS documents no supported way to run Auto Mode
++ user Karpenter side-by-side.
+
+**Decision:** keep EKS Managed Node Group (proven on this cluster) but replace
+the kata-deploy DaemonSet path with a Packer-baked AMI + nodeadm userData.
+
+## What stayed from earlier waves
+
+- `packer/kata-ami.pkr.hcl`, `packer/install-kata.sh` — metal-only builder
+- `packer/ssm-parameter-plan.sh`
+- AMI `ami-0a9d081a8aaf7c0b5` (live in account 940019131157, us-west-2)
+- SSM `/openclaw/kata/ami-id` = `ami-0a9d081a8aaf7c0b5` (version 2)
+
+## What was reverted
+
+- `terraform destroy -target=module.karpenter` — 23 resources removed cleanly
+- `terraform/karpenter.tf` — deleted
+- `gitops/helm/karpenter/` — deleted
+- `gitops/helm/kata-baked/` — deleted
+- `gitops/apps/karpenter.yaml.draft`, `gitops/apps/kata-baked.yaml.draft` — deleted
+
+## What's new (Wave 2 draft, NOT applied)
+
+- `terraform/kata.tf.wave2-draft` — replaces the existing `terraform/kata.tf`
+  - Adds `data "aws_ssm_parameter" "kata_ami_id"` reading from SSM
+  - Adds `aws_launch_template.kata` with `image_id` from SSM
+  - MIME-multipart userData containing nodeadm `NodeConfig`:
+      - `spec.cluster.*` — cluster name, endpoint, CA, service CIDR (so node
+        can join without EKS-injected bootstrap — required when `ami_type=CUSTOM`)
+      - `spec.containerd.config` — registers `kata-clh` and `kata-qemu`
+        runtime handlers BEFORE containerd starts (no restart)
+  - `aws_eks_node_group.kata`:
+      - `ami_type = "CUSTOM"` (was `AL2023_x86_64_STANDARD`)
+      - `launch_template { id, version }` attached
+      - Same labels, taints, subnets, scaling, IAM, access entry
+  - `null_resource.kube_proxy_kata_affinity` retained — still required
+    (Auto Mode kube-proxy DaemonSet targets `compute-type=auto` only; MNG
+    nodes need the patch regardless of how Kata is installed)
+
+## What this replaces once promoted and applied
+
+| Artifact today | After Wave 2 |
+|---|---|
+| `gitops/helm/kata-deploy/` (Helm wrapper around DaemonSet) | Deleted — binaries in AMI |
+| `gitops/apps/kata-deploy.yaml` (ArgoCD Application) | Deleted |
+| `gitops/helm/kata-deploy/templates/kubelet-restart.yaml` | Deleted — no containerd restart |
+| kata-deploy DaemonSet pulling quay.io image at every node boot | — |
+| kata-kubelet-restart DaemonSet | — |
+| Node Ready in 3–5 min | Node Ready in ~60–90 s |
+
+## Verification before promoting kata.tf.wave2-draft → kata.tf
+
+1. Confirm `module.eks.cluster_service_cidr` is an exposed output of the
+   `terraform-aws-modules/eks/aws ~> 20.0` version in use (it is for 20.x, but
+   verify with `terraform console` or a targeted plan before apply).
+2. `mv terraform/kata.tf.wave2-draft terraform/kata.tf`
+3. `terraform plan -target=aws_launch_template.kata -target=aws_eks_node_group.kata`
+   — expect: create LT, in-place replace MNG (new ami_type + launch_template).
+4. Decide whether to `-replace` the existing Kata node or let MNG rolling-update
+   handle it.
+
+## Current branch state
+
+Branch `feature/karpenter-baked-ami-kata`:
+  0a5f75f  wave 0: drafts
+  688a4a1  wave 1: Packer AMI + karpenter.tf promoted (now reverted)
+  HEAD     wave 1b/2: cleanup + kata.tf.wave2-draft
+
+main: UNTOUCHED.
