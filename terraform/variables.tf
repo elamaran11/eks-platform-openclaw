@@ -40,6 +40,12 @@ variable "kata_instance_types" {
   default     = ["c5.metal", "m5.metal"]
 }
 
+variable "enable_kata_baked" {
+  description = "Whether to deploy the Wave 2 additive MNG using the Packer-baked Kata AMI (additive — does not touch existing kata MNG)"
+  type        = bool
+  default     = true
+}
+
 variable "cluster_endpoint_public_access" {
   description = "Whether the EKS cluster API endpoint is publicly accessible"
   type        = bool

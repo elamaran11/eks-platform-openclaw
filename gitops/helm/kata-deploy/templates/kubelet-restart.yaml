@@ -17,8 +17,21 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       tolerations:
         - operator: Exists
-      nodeSelector:
-        katacontainers.io/kata-runtime: "true"
+      # Only recover nodes where kata-deploy ran and bounced containerd.
+      # Baked-AMI nodes (kata-path=baked-ami) already have Kata installed at
+      # image bake time and do NOT need — and must NOT receive — a kubelet
+      # restart, which would brick them.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: katacontainers.io/kata-runtime
+                    operator: In
+                    values: ["true"]
+                  - key: kata-path
+                    operator: NotIn
+                    values: ["baked-ami"]
       initContainers:
         - name: restart-kubelet
           image: nicolaka/netshoot
