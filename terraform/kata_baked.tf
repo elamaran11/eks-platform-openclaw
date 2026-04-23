@@ -65,6 +65,17 @@ resource "aws_launch_template" "kata_baked" {
     http_put_response_hop_limit = 2
   }
 
+  # userData — cluster-join info ONLY. Containerd runtime handlers are baked
+  # into /etc/eks/nodeadm.d/50-kata-containerd.yaml by the Packer script.
+  # The EKS-optimized AL2023 AMI's nodeadm-config systemd service merges
+  # userData with any drop-ins in /etc/eks/nodeadm.d/ before nodeadm-run
+  # (per AWS docs: eks/latest/userguide/al2023.html — "Additional Information
+  # About nodeadm").
+  #
+  # Previous userData also contained a containerd.config block; combining
+  # it with the baked drop-in triggered a double-nodeadm-init race that
+  # misconfigured the ENA driver and rebooted the node. Keeping this
+  # userData minimal (cluster-only) is required.
   user_data = base64encode(<<-EOT
     MIME-Version: 1.0
     Content-Type: multipart/mixed; boundary="BOUNDARY"
@@ -81,19 +92,6 @@ resource "aws_launch_template" "kata_baked" {
         apiServerEndpoint: ${module.eks.cluster_endpoint}
         certificateAuthority: ${module.eks.cluster_certificate_authority_data}
         cidr: ${module.eks.cluster_service_cidr}
-      containerd:
-        config: |
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-clh]
-          runtime_type = "io.containerd.kata.v2"
-          privileged_without_host_devices = true
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-clh.options]
-          ConfigPath = "/etc/kata-containers/configuration.toml"
-
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-qemu]
-          runtime_type = "io.containerd.kata.v2"
-          privileged_without_host_devices = true
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-qemu.options]
-          ConfigPath = "/etc/kata-containers/configuration-qemu.toml"
 
     --BOUNDARY--
   EOT

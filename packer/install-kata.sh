@@ -65,8 +65,33 @@ sudo ln -sf /etc/kata-containers/configuration.toml \
 sudo cp /opt/kata/share/defaults/kata-containers/configuration-qemu.toml \
     /etc/kata-containers/configuration-qemu.toml
 
-# 5. Containerd config is written by nodeadm from the EC2NodeClass userData.
-#    Do NOT edit /etc/containerd/config.toml here — nodeadm regenerates it at boot.
+# 5. Bake containerd runtime handlers into /etc/eks/nodeadm.d/
+#    Per AWS docs (eks/latest/userguide/al2023.html — "Additional Information
+#    About nodeadm"), this is the correct pattern for AL2023 custom AMIs:
+#    nodeadm-config / nodeadm-run systemd services merge YAML files in
+#    /etc/eks/nodeadm.d/ with userData atomically at boot — avoiding the
+#    double-nodeadm-init race that otherwise misconfigures ENIs and triggers
+#    an uncontrolled reboot (empirically observed 2026-04-22 with userData-
+#    delivered NodeConfig on c5.metal MNG).
+sudo mkdir -p /etc/eks/nodeadm.d
+sudo tee /etc/eks/nodeadm.d/50-kata-containerd.yaml > /dev/null <<'NODECFG'
+apiVersion: node.eks.aws/v1alpha1
+kind: NodeConfig
+spec:
+  containerd:
+    config: |
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-clh]
+      runtime_type = "io.containerd.kata.v2"
+      privileged_without_host_devices = true
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-clh.options]
+      ConfigPath = "/etc/kata-containers/configuration.toml"
+
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-qemu]
+      runtime_type = "io.containerd.kata.v2"
+      privileged_without_host_devices = true
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-qemu.options]
+      ConfigPath = "/etc/kata-containers/configuration-qemu.toml"
+NODECFG
 
 # 6. Verification helper for operator use
 cat <<'EOF' | sudo tee /usr/local/bin/verify-kata.sh
