@@ -79,8 +79,12 @@ data:
     function sseWrite(res, data) { res.write(`data: ${JSON.stringify(data)}\n\n`); }
 
     async function streamReplyAsSse(res, text) {
-      const chunks = text.match(/.{1,8}/gs) || [text];
-      for (const c of chunks) { sseWrite(res, { delta: c }); await new Promise(r => setTimeout(r, 10)); }
+      // openclaw currently returns the whole reply synchronously, so there
+      // is no token stream to forward. Emit once — the previous 8-char
+      // chunk + 10ms sleep loop added ~2s of pointless latency *after*
+      // the model was already done. True per-token streaming is a
+      // follow-up (needs the openclaw WS client).
+      sseWrite(res, { delta: text });
       sseWrite(res, { done: true });
       res.write("data: [DONE]\n\n");
       res.end();
