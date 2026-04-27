@@ -35,6 +35,9 @@ terraform/*.tfvars.json
 # Generated diagrams (regenerate with diagram tool)
 # generated-diagrams/ — tracked so images render in GitHub README
 
+# Cognito hosted-UI logo — generated from logo.svg via render-logo.sh
+terraform/cognito_ui/logo.png
+
 # Logs
 *.log
 apply.log
