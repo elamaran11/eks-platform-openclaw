@@ -40,7 +40,11 @@ data:
                 { "name": "system-prompt", "configMap": { "name": "finance-system-prompt" } },
                 { "name": "openclaw-config", "emptyDir": {} },
                 { "name": "adapter-src", "configMap": { "name": "finance-adapter-src", "defaultMode": 365 } },
-                { "name": "adapter-tmp", "emptyDir": {} }
+                { "name": "adapter-tmp", "emptyDir": {} },
+                { "name": "secrets", "projected": { "defaultMode": 256, "sources": [
+                  { "secret": { "name": "finance-litellm-key", "items": [{ "key": "api-key", "path": "litellm-api-key" }] } },
+                  { "secret": { "name": "openclaw-gateway-auth", "items": [{ "key": "token", "path": "gateway-auth-token" }] } }
+                ] } }
               ],
               "containers": [
                 {
@@ -59,17 +63,16 @@ data:
                     "limits": { "cpu": "2", "memory": "4Gi" }
                   },
                   "env": [
-                    { "name": "LITELLM_API_KEY", "valueFrom": { "secretKeyRef": { "name": "finance-litellm-key", "key": "api-key" } } },
-                    { "name": "GATEWAY_AUTH_TOKEN", "valueFrom": { "secretKeyRef": { "name": "openclaw-gateway-auth", "key": "token" } } },
                     { "name": "WORKSPACE_DIR", "value": "/workspace" },
                     { "name": "SYSTEM_PROMPT_FILE", "value": "/etc/openclaw/system-prompt.md" }
                   ],
-                  "command": ["sh","-c","set -e; mkdir -p /workspace/scenarios /workspace/inbox; for f in goals.md snapshot.md decisions.md questions.md; do [ -f /workspace/$f ] || touch /workspace/$f; done; cp /etc/openclaw/system-prompt.md /workspace/BOOT.md; mkdir -p /home/node/.openclaw; cat > /home/node/.openclaw/openclaw.json <<'EOF'\n{\"models\":{\"providers\":{\"litellm\":{\"baseUrl\":\"http://litellm.litellm.svc.cluster.local:4000\",\"apiKey\":\"${LITELLM_API_KEY}\",\"api\":\"openai-completions\",\"models\":[{\"id\":\"claude-sonnet-4-6\",\"name\":\"Claude Sonnet 4.6\",\"reasoning\":true,\"input\":[\"text\",\"image\"],\"contextWindow\":200000,\"maxTokens\":3072}]}}},\"agents\":{\"defaults\":{\"model\":{\"primary\":\"litellm/claude-sonnet-4-6\"},\"workspace\":\"/workspace\"}},\"gateway\":{\"port\":18789,\"mode\":\"local\",\"bind\":\"lan\",\"auth\":{\"mode\":\"token\",\"token\":\"${GATEWAY_AUTH_TOKEN}\"},\"controlUi\":{\"dangerouslyAllowHostHeaderOriginFallback\":true}}}\nEOF\nexec node dist/index.js gateway --bind=lan --port 18789 --allow-unconfigured"],
+                  "command": ["sh","-c","set -eu; LITELLM_API_KEY=$(cat /var/run/openclaw/litellm-api-key); GATEWAY_AUTH_TOKEN=$(cat /var/run/openclaw/gateway-auth-token); mkdir -p /workspace/scenarios /workspace/inbox; for f in goals.md snapshot.md decisions.md questions.md; do [ -f /workspace/$f ] || touch /workspace/$f; done; cp /etc/openclaw/system-prompt.md /workspace/BOOT.md; mkdir -p /home/node/.openclaw; cat > /home/node/.openclaw/openclaw.json <<EOF\n{\"models\":{\"providers\":{\"litellm\":{\"baseUrl\":\"http://litellm.litellm.svc.cluster.local:4000\",\"apiKey\":\"${LITELLM_API_KEY}\",\"api\":\"openai-completions\",\"models\":[{\"id\":\"claude-sonnet-4-6\",\"name\":\"Claude Sonnet 4.6\",\"reasoning\":true,\"input\":[\"text\",\"image\"],\"contextWindow\":200000,\"maxTokens\":3072}]}}},\"agents\":{\"defaults\":{\"model\":{\"primary\":\"litellm/claude-sonnet-4-6\"},\"workspace\":\"/workspace\"}},\"gateway\":{\"port\":18789,\"mode\":\"local\",\"bind\":\"lan\",\"auth\":{\"mode\":\"token\",\"token\":\"${GATEWAY_AUTH_TOKEN}\"},\"controlUi\":{\"dangerouslyAllowHostHeaderOriginFallback\":true}}}\nEOF\nunset LITELLM_API_KEY GATEWAY_AUTH_TOKEN; exec node dist/index.js gateway --bind=lan --port 18789 --allow-unconfigured"],
                   "ports": [{ "name": "gateway", "containerPort": 18789, "protocol": "TCP" }],
                   "volumeMounts": [
                     { "name": "workspace", "mountPath": "/workspace" },
                     { "name": "system-prompt", "mountPath": "/etc/openclaw", "readOnly": true },
-                    { "name": "openclaw-config", "mountPath": "/home/node/.openclaw" }
+                    { "name": "openclaw-config", "mountPath": "/home/node/.openclaw" },
+                    { "name": "secrets", "mountPath": "/var/run/openclaw", "readOnly": true }
                   ],
                   "readinessProbe": { "tcpSocket": { "port": 18789 }, "initialDelaySeconds": 10 },
                   "livenessProbe": { "tcpSocket": { "port": 18789 }, "initialDelaySeconds": 30 }
@@ -91,8 +94,6 @@ data:
                   },
                   "env": [
                     { "name": "PORT", "value": "18790" },
-                    { "name": "LITELLM_API_KEY", "valueFrom": { "secretKeyRef": { "name": "finance-litellm-key", "key": "api-key" } } },
-                    { "name": "GATEWAY_AUTH_TOKEN", "valueFrom": { "secretKeyRef": { "name": "openclaw-gateway-auth", "key": "token" } } },
                     { "name": "SYSTEM_PROMPT_FILE", "value": "/etc/openclaw/system-prompt.md" },
                     { "name": "OPENCLAW_CMD", "value": "openclaw" },
                     { "name": "OPENCLAW_ARGS", "value": "" },
@@ -105,7 +106,8 @@ data:
                     { "name": "system-prompt", "mountPath": "/etc/openclaw", "readOnly": true },
                     { "name": "openclaw-config", "mountPath": "/home/node/.openclaw" },
                     { "name": "adapter-src", "mountPath": "/adapter", "readOnly": true },
-                    { "name": "adapter-tmp", "mountPath": "/tmp/adapter-home" }
+                    { "name": "adapter-tmp", "mountPath": "/tmp/adapter-home" },
+                    { "name": "secrets", "mountPath": "/var/run/openclaw", "readOnly": true }
                   ],
                   "readinessProbe": { "httpGet": { "path": "/healthz", "port": 18790 }, "initialDelaySeconds": 5, "periodSeconds": 10 },
                   "livenessProbe": { "httpGet": { "path": "/healthz", "port": 18790 }, "initialDelaySeconds": 20, "periodSeconds": 30 }

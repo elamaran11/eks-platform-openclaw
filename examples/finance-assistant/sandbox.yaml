@@ -47,6 +47,23 @@ spec:
             defaultMode: 0555
         - name: adapter-tmp
           emptyDir: {}
+        # Tmpfs-backed secret mounts with mode 0400. Keeps keys out of env
+        # so an `env` dump through the agent can't leak them, and out of
+        # etcd-disk paths on node. Projected per-container below.
+        - name: secrets
+          projected:
+            defaultMode: 0400
+            sources:
+              - secret:
+                  name: finance-litellm-key
+                  items:
+                    - key: api-key
+                      path: litellm-api-key
+              - secret:
+                  name: openclaw-gateway-auth
+                  items:
+                    - key: token
+                      path: gateway-auth-token
       containers:
         - name: openclaw
           image: ghcr.io/openclaw/openclaw:latest
@@ -67,16 +84,6 @@ spec:
               cpu: 2
               memory: 4Gi
           env:
-            - name: LITELLM_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: finance-litellm-key
-                  key: api-key
-            - name: GATEWAY_AUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: openclaw-gateway-auth
-                  key: token
             - name: WORKSPACE_DIR
               value: /workspace
             - name: SYSTEM_PROMPT_FILE
@@ -85,7 +92,13 @@ spec:
             - sh
             - -c
             - |
-              set -e
+              set -eu
+              # Secrets come from tmpfs files mounted at /var/run/openclaw,
+              # not env vars. They live in shell locals only long enough to
+              # render openclaw.json; a `env` dump via the agent shows
+              # nothing useful.
+              LITELLM_API_KEY=$(cat /var/run/openclaw/litellm-api-key)
+              GATEWAY_AUTH_TOKEN=$(cat /var/run/openclaw/gateway-auth-token)
               mkdir -p /workspace/scenarios /workspace/inbox
               [ -f /workspace/goals.md ]    || touch /workspace/goals.md
               [ -f /workspace/snapshot.md ] || touch /workspace/snapshot.md
@@ -95,7 +108,7 @@ spec:
               # so the finance persona is injected once per gateway life, not
               # per turn. Refresh on every restart in case the ConfigMap changed.
               cp /etc/openclaw/system-prompt.md /workspace/BOOT.md
-              cat > /home/node/.openclaw/openclaw.json <<'EOF'
+              cat > /home/node/.openclaw/openclaw.json <<EOF
               {
                 "models": {
                   "providers": {
@@ -136,6 +149,9 @@ spec:
                 }
               }
               EOF
+              # Drop the locals before exec — the openclaw gateway reads
+              # the rendered config file, not env.
+              unset LITELLM_API_KEY GATEWAY_AUTH_TOKEN
               exec node dist/index.js gateway --bind=lan --port 18789 --allow-unconfigured --verbose
           ports:
             - name: gateway
@@ -145,6 +161,7 @@ spec:
             - { name: workspace,       mountPath: /workspace }
             - { name: system-prompt,   mountPath: /etc/openclaw, readOnly: true }
             - { name: openclaw-config, mountPath: /home/node/.openclaw }
+            - { name: secrets,         mountPath: /var/run/openclaw, readOnly: true }
           readinessProbe:
             tcpSocket: { port: 18789 }
             initialDelaySeconds: 10
@@ -167,12 +184,6 @@ spec:
           env:
             - name: PORT
               value: "18790"
-            - name: LITELLM_API_KEY
-              valueFrom:
-                secretKeyRef: { name: finance-litellm-key, key: api-key }
-            - name: GATEWAY_AUTH_TOKEN
-              valueFrom:
-                secretKeyRef: { name: openclaw-gateway-auth, key: token }
             - name: SYSTEM_PROMPT_FILE
               value: /etc/openclaw/system-prompt.md
             - name: OPENCLAW_CMD
@@ -203,6 +214,10 @@ spec:
             - { name: openclaw-config, mountPath: /home/node/.openclaw }
             - { name: adapter-src,     mountPath: /adapter, readOnly: true }
             - { name: adapter-tmp,     mountPath: /tmp/adapter-home }
+            # Adapter reads secrets via the same tmpfs file path; if ever
+            # spawning a subprocess, log-redact scrubs stdout/stderr as
+            # belt-and-braces.
+            - { name: secrets,         mountPath: /var/run/openclaw, readOnly: true }
           readinessProbe:
             httpGet: { path: /healthz, port: 18790 }
             initialDelaySeconds: 5

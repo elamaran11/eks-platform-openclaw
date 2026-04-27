@@ -132,6 +132,29 @@ resource "aws_bedrock_guardrail" "finance" {
     managed_word_lists_config {
       type = "PROFANITY"
     }
+    # Credential-shape filters: if the model is ever coaxed (by prompt
+    # injection, confused tool loop, or bug) into echoing a string that
+    # looks like a secret, the guardrail blocks the response before it
+    # reaches the user's screen or session logs. Belt and braces — the
+    # primary defense is not exposing secrets to the model at all.
+    words_config {
+      text = "sk-"
+    }
+    words_config {
+      text = "AKIA"
+    }
+    words_config {
+      text = "ASIA"
+    }
+    words_config {
+      text = "BEGIN PRIVATE KEY"
+    }
+    words_config {
+      text = "BEGIN RSA PRIVATE KEY"
+    }
+    words_config {
+      text = "BEGIN OPENSSH PRIVATE KEY"
+    }
   }
 }
 
