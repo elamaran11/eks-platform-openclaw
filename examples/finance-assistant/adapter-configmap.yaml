@@ -7,7 +7,32 @@ data:
   server.js: |
     // Adapter sidecar — injected via ConfigMap; lives in the same Kata VM
     // as the openclaw gateway. Calls `openclaw agent --local` per turn.
+
+    // Log redactor: belt-and-braces scrub of stdout/stderr for secret-
+    // shaped strings. Primary defense is still tmpfs-mounted secrets +
+    // env-strip below.
+    (function installLogRedact() {
+      const PATTERNS = [
+        /\bsk-[A-Za-z0-9_-]{16,64}\b/g,
+        /\b(AKIA|ASIA)[A-Z0-9]{16}\b/g,
+        /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
+        /\b[a-f0-9]{48,}\b/g,
+        /\b[A-Za-z0-9/+=]{40}\b/g,
+      ];
+      function scrub(c) {
+        if (c == null) return c;
+        let s = typeof c === "string" ? c : c.toString("utf8");
+        for (const re of PATTERNS) s = s.replace(re, "[REDACTED]");
+        return typeof c === "string" ? s : Buffer.from(s, "utf8");
+      }
+      for (const stream of [process.stdout, process.stderr]) {
+        const orig = stream.write.bind(stream);
+        stream.write = (c, e, cb) => orig(scrub(c), e, cb);
+      }
+    })();
+
     const http = require("http");
+    const fs = require("fs");
     const { spawn } = require("child_process");
 
     const PORT = parseInt(process.env.PORT || "18790", 10);
@@ -16,6 +41,14 @@ data:
     const OPENCLAW_ARGS = rawArgs.trim() ? rawArgs.trim().split(/\s+/) : [];
     const SYSTEM_PROMPT_FILE = process.env.SYSTEM_PROMPT_FILE || "/etc/openclaw/system-prompt.md";
     const DEFAULT_TIMEOUT_MS = 300000;
+
+    // Secrets are tmpfs-mounted as files, not env vars. Read at startup
+    // and drop from env so any downstream `env` dump leaks nothing.
+    function readSecret(p) { try { return fs.readFileSync(p, "utf8").trim(); } catch { return ""; } }
+    const LITELLM_API_KEY = readSecret("/var/run/openclaw/litellm-api-key") || process.env.LITELLM_API_KEY || "";
+    const GATEWAY_AUTH_TOKEN = readSecret("/var/run/openclaw/gateway-auth-token") || process.env.GATEWAY_AUTH_TOKEN || "";
+    delete process.env.LITELLM_API_KEY;
+    delete process.env.GATEWAY_AUTH_TOKEN;
 
     // System prompt is no longer injected per-turn — it lives in
     // /workspace/BOOT.md and is loaded into the gateway on startup by the

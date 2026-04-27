@@ -9,7 +9,13 @@
 // System prompt lives at /etc/openclaw/system-prompt.md and is
 // prepended to the user message on the first turn per session.
 
+// Redact first thing — catches every subsequent console.log/error that
+// might touch a secret-shaped string. File-mounted secrets (below) are
+// the primary defense; this is defense-in-depth.
+require("./log-redact").install();
+
 const http = require("http");
+const fs = require("fs");
 const { spawn } = require("child_process");
 
 const PORT = parseInt(process.env.PORT || "18790", 10);
@@ -17,6 +23,20 @@ const OPENCLAW_CMD = process.env.OPENCLAW_CMD || "openclaw";
 const rawArgs = process.env.OPENCLAW_ARGS || "";
 const OPENCLAW_ARGS = rawArgs.trim() ? rawArgs.trim().split(/\s+/) : [];
 const DEFAULT_TIMEOUT_MS = 300000;
+
+// Secrets are mounted as tmpfs files at /var/run/openclaw/*.
+// We read them into locals at startup, then drop the env var (if any)
+// so a downstream `env` dump cannot leak the value. The openclaw CLI
+// still reads its config from /home/node/.openclaw/openclaw.json where
+// the gateway container has already substituted these values in.
+function readSecretFile(path) {
+  try { return fs.readFileSync(path, "utf8").trim(); } catch { return ""; }
+}
+const LITELLM_API_KEY = readSecretFile("/var/run/openclaw/litellm-api-key") || process.env.LITELLM_API_KEY || "";
+const GATEWAY_AUTH_TOKEN = readSecretFile("/var/run/openclaw/gateway-auth-token") || process.env.GATEWAY_AUTH_TOKEN || "";
+// Strip from env so child processes can't inherit them.
+delete process.env.LITELLM_API_KEY;
+delete process.env.GATEWAY_AUTH_TOKEN;
 
 // System prompt is mounted at /etc/openclaw/system-prompt.md and copied to
 // /workspace/BOOT.md by the openclaw container; the boot-md hook loads it
@@ -36,7 +56,14 @@ function runOpenclaw(sessionId, message) {
       "-m", message,
     ];
     const child = spawn(OPENCLAW_CMD, args, {
-      env: { ...process.env },
+      // Minimal env: only what the openclaw CLI actually needs. Secrets
+      // are deliberately excluded — the CLI reads them from its config
+      // file the gateway container wrote.
+      env: {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        NODE_ENV: process.env.NODE_ENV || "production",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
 
