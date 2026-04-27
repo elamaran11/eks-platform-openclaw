@@ -80,13 +80,12 @@ function sseWrite(res, data) {
 }
 
 async function streamReplyAsSse(res, text) {
-  // Chunk the reply so the UI gets a typing effect. openclaw returns the
-  // full text synchronously so true token streaming needs a protocol change.
-  const chunks = text.match(/.{1,6}/gs) || [text];
-  for (const c of chunks) {
-    sseWrite(res, { delta: c });
-    await new Promise((r) => setTimeout(r, 12));
-  }
+  // openclaw currently returns the whole reply synchronously, so there is
+  // no token stream to forward. Emit the full text as one SSE delta — the
+  // previous code chopped it into 6-char chunks with 12ms sleeps between
+  // them, which added ~2s of pointless latency *after* the model was done.
+  // True per-token streaming is a follow-up (needs the openclaw WS client).
+  sseWrite(res, { delta: text });
   sseWrite(res, { done: true });
   res.write("data: [DONE]\n\n");
   res.end();
