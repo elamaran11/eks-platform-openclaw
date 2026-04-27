@@ -32,7 +32,14 @@ spec:
           env:
             - name: NODE_ENV
               value: production
-            - name: ADAPTER_URL
+            # Phase-5 cutover flag: set to "true" to route chats through
+            # the session-router (per-user Sandbox). Defaults to the legacy
+            # shared sandbox. Flip with a deployment patch — no image rebuild.
+            - name: USE_SESSION_ROUTER
+              value: "false"
+            - name: LEGACY_ADAPTER_URL
+              value: http://finance-sandbox.finance-assistant.svc.cluster.local:18790
+            - name: ROUTER_URL
               value: http://finance-session-router.finance-assistant.svc.cluster.local:18790
           resources:
             requests: { cpu: 100m, memory: 256Mi }
