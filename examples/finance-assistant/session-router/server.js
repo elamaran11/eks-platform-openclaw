@@ -22,6 +22,12 @@ const NAMESPACE = process.env.NAMESPACE || "finance-assistant";
 const SANDBOX_TEMPLATE = process.env.SANDBOX_TEMPLATE || "/etc/router/sandbox-template.json";
 const SANDBOX_READY_TIMEOUT_MS = parseInt(process.env.SANDBOX_READY_TIMEOUT_MS || "60000", 10);
 const IDLE_TTL_SECONDS = parseInt(process.env.IDLE_TTL_SECONDS || "1800", 10);
+// Read-only mode: do NOT provision per-user sandboxes; proxy to the
+// legacy shared sandbox. Phase-4 safety net — lets us smoke-test the
+// router's SSE proxy path before flipping real user traffic to the
+// per-user model.
+const READ_ONLY = process.env.ROUTER_READ_ONLY === "true";
+const LEGACY_BACKEND = process.env.LEGACY_BACKEND || "finance-sandbox.finance-assistant.svc.cluster.local";
 
 // ALB verifies the Cognito JWT and signs x-amzn-oidc-data itself before
 // forwarding. In front of this router must be the ALB Cognito auth chain
@@ -214,6 +220,21 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method !== "POST" || req.url !== "/chat") {
     res.writeHead(404); return res.end();
+  }
+
+  // Phase-4 smoke test mode: pass-through to the legacy shared sandbox
+  // without provisioning anything. Lets us validate the SSE proxy path
+  // and x-amzn-oidc-data forwarding before flipping real user traffic
+  // to per-user sandboxes.
+  if (READ_ONLY) {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    await proxyChat(req, res, LEGACY_BACKEND);
+    return;
   }
 
   const sub = extractUserSub(req);
