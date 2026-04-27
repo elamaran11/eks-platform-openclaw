@@ -38,6 +38,9 @@ terraform/*.tfvars.json
 # Cognito hosted-UI logo — generated from logo.svg via render-logo.sh
 terraform/cognito_ui/logo.png
 
+# Session-router rendered manifest — generated from deployment.yaml + server.js + package.json
+examples/finance-assistant/session-router/k8s/deployment.rendered.yaml
+
 # Logs
 *.log
 apply.log
