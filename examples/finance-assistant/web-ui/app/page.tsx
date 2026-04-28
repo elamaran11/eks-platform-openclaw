@@ -89,6 +89,11 @@ With that said: most financial questions have a common structure. **What is the 
 For what you asked — sign in to the full assistant and we can work through the specifics with your actual numbers, run scenario math, and save the analysis to your private workspace.`,
 };
 
+// Cross-host target: on finwelcome.* the landing page is public. All
+// "Sign in" and "Get started" CTAs send users to the authenticated
+// host (finassist.*) so the ALB's Cognito flow kicks in on arrival.
+const APP_URL = "https://finassist.elamaras.people.aws.dev/app";
+
 function matchReply(q: string): string {
   const s = q.toLowerCase();
   if (/sav|invest|401|roth|hsa|bracket/.test(s)) return DEMO_REPLIES.savings;
@@ -132,9 +137,9 @@ export default function Landing() {
               An educational assistant that helps you reason clearly about budgeting, retirement, tax concepts, and major purchases. Frameworks, math, and honest tradeoffs — never specific picks or guaranteed returns.
             </p>
             <div className="mt-10 flex items-center justify-center gap-3 flex-wrap">
-              <Link href="/login" className="btn-gradient group rounded-xl px-6 py-3.5 text-sm font-semibold flex items-center gap-2 shadow-xl shadow-accent-500/30 transition-all hover:shadow-accent-500/50">
+              <a href={APP_URL} className="btn-gradient group rounded-xl px-6 py-3.5 text-sm font-semibold flex items-center gap-2 shadow-xl shadow-accent-500/30 transition-all hover:shadow-accent-500/50">
                 Get started <ArrowRight size={16} className="group-hover:translate-x-0.5 transition"/>
-              </Link>
+              </a>
               <a href="#preview" className="rounded-xl px-6 py-3.5 text-sm font-semibold border border-ink-700 text-ink-200 hover:border-accent-500/50 hover:text-ink-100 transition">
                 Try it live ↓
               </a>
@@ -253,9 +258,9 @@ export default function Landing() {
             <span className="bg-gradient-to-br from-accent-400 to-gold-500 bg-clip-text text-transparent">Start thinking clearly.</span>
           </h2>
           <div className="mt-8 flex items-center justify-center gap-3">
-            <Link href="/login" className="btn-gradient group rounded-xl px-7 py-4 text-sm font-semibold flex items-center gap-2 shadow-xl shadow-accent-500/30 transition-all hover:shadow-accent-500/50">
+            <a href={APP_URL} className="btn-gradient group rounded-xl px-7 py-4 text-sm font-semibold flex items-center gap-2 shadow-xl shadow-accent-500/30 transition-all hover:shadow-accent-500/50">
               Sign in to start <ArrowRight size={16} className="group-hover:translate-x-0.5 transition"/>
-            </Link>
+            </a>
           </div>
         </div>
       </section>
@@ -264,9 +269,9 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row gap-4 items-center justify-between text-xs text-ink-500">
           <div>Finance Assistant — a private, hardware-isolated thinking partner.</div>
           <div className="flex gap-5">
-            <Link href="/app" className="hover:text-ink-300">App</Link>
+            <a href={APP_URL} className="hover:text-ink-300">App</a>
             <a href="#preview" className="hover:text-ink-300">Preview</a>
-            <Link href="/login" className="hover:text-ink-300">Sign in</Link>
+            <a href={APP_URL} className="hover:text-ink-300">Sign in</a>
           </div>
         </div>
       </footer>
@@ -286,7 +291,7 @@ function Nav() {
         </Link>
         <div className="flex items-center gap-6 text-sm">
           <a href="#preview" className="text-ink-400 hover:text-ink-100 transition hidden sm:block">Preview</a>
-          <Link href="/login" className="btn-gradient rounded-lg px-4 py-2 text-xs font-semibold">Sign in</Link>
+          <a href={APP_URL} className="btn-gradient rounded-lg px-4 py-2 text-xs font-semibold">Sign in</a>
         </div>
       </nav>
     </header>
@@ -484,7 +489,7 @@ function LivePreview() {
         </div>
         <div className="mt-3 flex items-center justify-between text-[11px] text-ink-500">
           <span>Preview only — canned replies. Real chat runs in an isolated VM after sign in.</span>
-          <Link href="/login" className="text-accent-400 hover:text-accent-300 font-medium">Sign in →</Link>
+          <a href={APP_URL} className="text-accent-400 hover:text-accent-300 font-medium">Sign in →</a>
         </div>
       </div>
     </motion.div>

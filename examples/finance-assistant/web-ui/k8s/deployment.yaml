@@ -23,7 +23,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ui
-          image: 940019131157.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.4.0
+          # v0.5.0 adds dual-host middleware: landing page on finwelcome.*,
+          # chat app on finassist.*. See middleware.ts.
+          image: 940019131157.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.5.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
@@ -78,12 +80,8 @@ spec:
     - port: 80
       targetPort: 3000
 ---
-# Single Cognito-auth ingress — EKS Auto Mode's ALB controller does not
-# implement the authenticate-cognito custom action type, so per-path
-# auth split is not available. All paths are gated; the landing page
-# renders after sign-in. Public-landing-page-without-auth is tracked
-# as a follow-up (would require fronting with CloudFront or moving to
-# a separate host served by a second ingress).
+# Auth-gated ingress — chat app on finassist.*.
+# Every path here goes through Cognito before reaching the pod.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -111,6 +109,38 @@ spec:
   ingressClassName: alb
   rules:
     - host: finassist.elamaras.people.aws.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: finance-ui
+                port:
+                  number: 80
+---
+# Public landing-page ingress — finwelcome.* with NO Cognito auth.
+# The landing page is the public marketing surface; "Sign in" /
+# "Get started" buttons redirect to https://finassist.*/app which
+# triggers the Cognito flow on arrival.
+# Wildcard cert *.elamaras.people.aws.dev covers both hostnames.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: finance-ui-welcome
+  namespace: finance-assistant
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:940019131157:certificate/2d6b2f41-9673-4c9e-a6ad-daa34982ced7
+    external-dns.alpha.kubernetes.io/hostname: finwelcome.elamaras.people.aws.dev
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=60
+spec:
+  ingressClassName: alb
+  rules:
+    - host: finwelcome.elamaras.people.aws.dev
       http:
         paths:
           - path: /
