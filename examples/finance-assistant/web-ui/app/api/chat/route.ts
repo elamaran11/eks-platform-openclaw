@@ -1,24 +1,39 @@
-// Two ADAPTER_URLs let us flip traffic between the legacy shared sandbox
-// and the per-user session-router without rebuilding the image. Deploy-time
-// flag: USE_SESSION_ROUTER=true sends /chat to the router.
+// /api/chat — SSE proxy to the in-cluster adapter or session-router.
+//
+// Auth: middleware.ts already verified the session cookie before we get
+// here. We decode the session to extract the user's sub and forward it
+// to the backend in an x-amzn-oidc-data-shaped header so the router can
+// route to the per-user sandbox without ALB auth.
+
+import { NextRequest } from "next/server";
+import { SESSION_COOKIE, verifySession } from "@/lib/auth";
+
 const LEGACY_URL  = process.env.LEGACY_ADAPTER_URL || "http://finance-sandbox.finance-assistant.svc.cluster.local:18790";
 const ROUTER_URL  = process.env.ROUTER_URL || "http://finance-session-router.finance-assistant.svc.cluster.local:18790";
 const USE_ROUTER  = process.env.USE_SESSION_ROUTER === "true";
 const ADAPTER_URL = USE_ROUTER ? ROUTER_URL : LEGACY_URL;
 
-export async function POST(req: Request) {
-  const { message, sessionId } = await req.json();
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-  // The ALB signs x-amzn-oidc-data after Cognito auth. The session-router
-  // reads `sub` from it to pick the per-user sandbox. Forward it verbatim.
-  const oidc = req.headers.get("x-amzn-oidc-data") || "";
+export async function POST(req: NextRequest) {
+  const body = await req.text();
+
+  // Reconstruct an x-amzn-oidc-data shaped header: three dot-joined
+  // base64 segments, middle segment = JSON claims. session-router only
+  // parses the middle segment for `sub`, so the signature is irrelevant.
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
+  const session = token ? await verifySession(token) : null;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (oidc) headers["x-amzn-oidc-data"] = oidc;
+  if (session) {
+    const claims = Buffer.from(JSON.stringify({ sub: session.sub, email: session.email })).toString("base64url");
+    headers["x-amzn-oidc-data"] = `app.${claims}.sig`;
+  }
 
   const upstream = await fetch(`${ADAPTER_URL}/chat`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ message, sessionId: sessionId || "web" }),
+    body,
     // @ts-expect-error node fetch
     duplex: "half",
   });
@@ -33,6 +48,3 @@ export async function POST(req: Request) {
     },
   });
 }
-
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";

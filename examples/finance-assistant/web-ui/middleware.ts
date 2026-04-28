@@ -1,43 +1,57 @@
+// App-layer auth middleware.
+//
+// /api/auth/*   — public (login/callback/logout/me)
+// /api/chat     — protected; 401 if no session
+// /app          — protected; redirect to /api/auth/login if no session
+// everything else on /  — public (landing page + static assets)
+//
+// This replaces the ALB's cognito auth action, which is all-or-nothing
+// per ingress and prevented a public landing on the same hostname.
+
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { jwtVerify } from "jose";
 
-// Dual-host routing.
-//
-// - finassist.* is the authenticated app host. Its ALB ingress gates
-//   every path with Cognito. We redirect "/" to "/app" so users who
-//   land on root go straight into the chat instead of seeing the
-//   marketing landing page (which is pointless once signed in).
-// - finwelcome.* is the public marketing host. Its ALB ingress has no
-//   auth. We leave "/" as-is (landing page) and redirect "/app" to
-//   the authenticated host so visitors who click "Sign in" cross over
-//   to the auth-gated domain.
-//
-// Everything else passes through untouched.
+const SESSION_COOKIE = "fa_session";
 
-export function middleware(req: NextRequest) {
-  const host = req.headers.get("host") || "";
+function secret(): Uint8Array | null {
+  const s = process.env.SESSION_SECRET;
+  if (!s) return null;
+  return new TextEncoder().encode(s);
+}
+
+// Edge runtime can't import lib/auth.ts (it uses crypto.randomBytes)
+// so we duplicate the minimal verify here — HS256 + SESSION_SECRET.
+async function sessionOk(token: string | undefined): Promise<boolean> {
+  if (!token) return false;
+  const key = secret();
+  if (!key) return false;
+  try { await jwtVerify(token, key); return true; } catch { return false; }
+}
+
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const isAuthHost = host.startsWith("finassist.");
-  const isLandingHost = host.startsWith("finwelcome.");
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
 
-  if (isAuthHost && pathname === "/") {
-    const url = req.nextUrl.clone();
-    url.pathname = "/app";
-    return NextResponse.redirect(url);
+  if (pathname.startsWith("/app")) {
+    if (!(await sessionOk(token))) {
+      const login = new URL("/api/auth/login", req.url);
+      login.searchParams.set("returnTo", pathname + req.nextUrl.search);
+      return NextResponse.redirect(login);
+    }
+    return NextResponse.next();
   }
 
-  if (isLandingHost && pathname.startsWith("/app")) {
-    // Cross-domain redirect — marketing host can't serve the app since
-    // the API calls need the Cognito cookie on the auth host.
-    const target = new URL("https://finassist.elamaras.people.aws.dev/app");
-    return NextResponse.redirect(target);
+  if (pathname === "/api/chat") {
+    if (!(await sessionOk(token))) {
+      return NextResponse.json({ error: "unauth" }, { status: 401 });
+    }
+    return NextResponse.next();
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  // Skip static assets and Next internals so the redirect logic only
-  // runs on page routes.
-  matcher: ["/((?!_next/|favicon.ico|api/).*)"],
+  matcher: ["/app/:path*", "/api/chat"],
 };
