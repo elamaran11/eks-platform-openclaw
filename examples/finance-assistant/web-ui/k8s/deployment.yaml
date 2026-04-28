@@ -78,11 +78,12 @@ spec:
     - port: 80
       targetPort: 3000
 ---
-# Single Ingress, single ALB, split auth via annotation-based actions.
-# /app, /api, /login, /oauth2/* go through authenticate-cognito → forward.
-# Everything else (/, /_next/*, /favicon.ico, static assets) forwards
-# directly to the UI pod without an auth check — so the landing page is
-# public and indexable.
+# Single Cognito-auth ingress — EKS Auto Mode's ALB controller does not
+# implement the authenticate-cognito custom action type, so per-path
+# auth split is not available. All paths are gated; the landing page
+# renders after sign-in. Public-landing-page-without-auth is tracked
+# as a follow-up (would require fronting with CloudFront or moving to
+# a separate host served by a second ingress).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -94,29 +95,16 @@ metadata:
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: '443'
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:940019131157:certificate/2d6b2f41-9673-4c9e-a6ad-daa34982ced7
-    # Action "authed-forward": Cognito auth, then forward to the UI
-    # service. Used only for /app, /api, /login, /oauth2/* rules below.
-    alb.ingress.kubernetes.io/actions.authed-forward: |
+    alb.ingress.kubernetes.io/auth-type: cognito
+    alb.ingress.kubernetes.io/auth-idp-cognito: |
       {
-        "type": "authenticate-cognito",
-        "authenticateCognitoConfig": {
-          "userPoolArn": "arn:aws:cognito-idp:us-west-2:940019131157:userpool/us-west-2_Gpb9hjoLH",
-          "userPoolClientId": "3uelp9pbba5ijnph9ej03jclvi",
-          "userPoolDomain": "openclaw-finance-940019131157",
-          "scope": "openid email profile",
-          "sessionCookieName": "AWSELBAuthSessionCookie",
-          "sessionTimeout": 3600,
-          "onUnauthenticatedRequest": "authenticate"
-        },
-        "forwardConfig": {
-          "targetGroups": [
-            {
-              "serviceName": "finance-ui",
-              "servicePort": "80"
-            }
-          ]
-        }
+        "UserPoolArn": "arn:aws:cognito-idp:us-west-2:940019131157:userpool/us-west-2_Gpb9hjoLH",
+        "UserPoolClientId": "3uelp9pbba5ijnph9ej03jclvi",
+        "UserPoolDomain": "openclaw-finance-940019131157"
       }
+    alb.ingress.kubernetes.io/auth-scope: "openid email profile"
+    alb.ingress.kubernetes.io/auth-session-cookie: AWSELBAuthSessionCookie
+    alb.ingress.kubernetes.io/auth-session-timeout: '3600'
     external-dns.alpha.kubernetes.io/hostname: finassist.elamaras.people.aws.dev
     alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=300
 spec:
@@ -125,40 +113,6 @@ spec:
     - host: finassist.elamaras.people.aws.dev
       http:
         paths:
-          # Protected paths — must come first so they match before the
-          # catch-all / below. Backend "authed-forward" is a synthetic
-          # service name the ALB controller recognizes from the
-          # actions.authed-forward annotation.
-          - path: /app
-            pathType: Prefix
-            backend:
-              service:
-                name: authed-forward
-                port:
-                  name: use-annotation
-          - path: /api
-            pathType: Prefix
-            backend:
-              service:
-                name: authed-forward
-                port:
-                  name: use-annotation
-          - path: /login
-            pathType: Prefix
-            backend:
-              service:
-                name: authed-forward
-                port:
-                  name: use-annotation
-          - path: /oauth2
-            pathType: Prefix
-            backend:
-              service:
-                name: authed-forward
-                port:
-                  name: use-annotation
-          # Public catch-all — landing page, static assets, favicon.
-          # Matches anything not caught by the four protected rules.
           - path: /
             pathType: Prefix
             backend:
