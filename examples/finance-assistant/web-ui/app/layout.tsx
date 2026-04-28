@@ -1,9 +1,15 @@
 import "./globals.css";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
-  title: "Finance Assistant",
-  description: "Hardware-isolated personal financial assistant",
+  title: "Finance Assistant — a thinking partner for money",
+  description: "A hardware-isolated educational assistant that helps you reason clearly about budgeting, retirement, tax concepts, and home-buying tradeoffs. No account access. No specific picks. No guaranteed returns.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#020617",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -58,3 +58,7 @@ node_modules/
 # Helm chart dependencies (downloaded at deploy time by ArgoCD)
 gitops/helm/*/charts/
 gitops/helm/*/Chart.lock
+
+# Next.js build output (baked into Docker image)
+examples/finance-assistant/web-ui/.next/
+examples/finance-assistant/web-ui/node_modules/
