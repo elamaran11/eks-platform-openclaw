@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Shield, Sparkles, Cpu, ShieldCheck, Lock, TrendingUp, Home, GraduationCap, Target, Menu, X } from "lucide-react";
+import { Send, Shield, Sparkles, Cpu, ShieldCheck, Lock, TrendingUp, Home, GraduationCap, Target, Menu, X, LogOut, User } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -25,6 +25,13 @@ export default function Page() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [me, setMe] = useState<{ email?: string; sub?: string } | null>(null);
+  useEffect(() => {
+    // Populate the signed-in user badge. If /me returns 401 the
+    // middleware already redirected, so getting here means we have a
+    // valid session — any 401 from /me is a real mismatch worth showing.
+    fetch("/api/auth/me").then((r) => r.ok ? r.json() : null).then(setMe).catch(() => setMe(null));
+  }, []);
   const [thinking, setThinking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -149,8 +156,28 @@ export default function Page() {
               </div>
             </div>
 
-            <div className="p-5 border-t border-ink-800/60 text-[11px] leading-relaxed text-ink-500">
-              Educational only. Not a fiduciary, CFP, or CPA. For material decisions consult a licensed professional.
+            <div className="p-5 border-t border-ink-800/60">
+              {me?.email && (
+                <div className="flex items-center gap-2.5 mb-3 px-2 py-2 rounded-lg bg-ink-900/60 border border-ink-800/80">
+                  <div className="w-7 h-7 shrink-0 rounded-full bg-gradient-to-br from-accent-500/30 to-gold-500/20 border border-accent-500/40 flex items-center justify-center text-accent-400">
+                    <User size={13}/>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12px] font-medium text-ink-100 truncate">{me.email}</div>
+                    <div className="text-[10px] text-ink-500">Signed in</div>
+                  </div>
+                </div>
+              )}
+              <a
+                href="/api/auth/logout"
+                className="flex items-center gap-2 w-full px-2.5 py-2 rounded-lg text-[12px] text-ink-300 hover:text-ink-50 hover:bg-ink-900/80 border border-transparent hover:border-ink-800 transition"
+              >
+                <LogOut size={13}/>
+                <span>Sign out</span>
+              </a>
+              <div className="mt-4 text-[11px] leading-relaxed text-ink-500">
+                Educational only. Not a fiduciary, CFP, or CPA. For material decisions consult a licensed professional.
+              </div>
             </div>
           </motion.aside>
         )}
