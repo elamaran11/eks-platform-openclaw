@@ -6,14 +6,16 @@
 // state, and deleting the cookie is sufficient.
 
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE } from "@/lib/auth";
+import { SESSION_COOKIE, APP_URL } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET(req: Request) {
-  const url = new URL("/", req.url);
-  const res = NextResponse.redirect(url);
+export async function GET() {
+  // Build the redirect from APP_URL (the externally-reachable origin),
+  // not req.url — behind the ALB, req.url reports the pod's internal
+  // http://localhost:3000/ and the browser ends up there.
+  const res = NextResponse.redirect(`${APP_URL}/`);
   res.cookies.delete(SESSION_COOKIE);
   return res;
 }
