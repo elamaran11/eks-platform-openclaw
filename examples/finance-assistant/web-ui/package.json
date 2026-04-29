@@ -8,6 +8,7 @@
     "start": "next start -p 3000"
   },
   "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.687.0",
     "clsx": "2.1.1",
     "framer-motion": "11.15.0",
     "highlight.js": "11.11.0",

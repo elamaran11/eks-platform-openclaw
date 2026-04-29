@@ -1,12 +1,8 @@
-// App-layer auth middleware.
+// App-layer auth gate.
 //
-// /api/auth/*   — public (login/callback/logout/me)
-// /api/chat     — protected; 401 if no session
-// /app          — protected; redirect to /api/auth/login if no session
-// everything else on /  — public (landing page + static assets)
-//
-// This replaces the ALB's cognito auth action, which is all-or-nothing
-// per ingress and prevented a public landing on the same hostname.
+// /api/chat — protected; 401 when no valid session cookie
+// /app      — protected; redirect to / (landing) where the modal opens
+// everything else on /  — public (landing page + static assets + auth APIs)
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -20,8 +16,6 @@ function secret(): Uint8Array | null {
   return new TextEncoder().encode(s);
 }
 
-// Edge runtime can't import lib/auth.ts (it uses crypto.randomBytes)
-// so we duplicate the minimal verify here — HS256 + SESSION_SECRET.
 async function sessionOk(token: string | undefined): Promise<boolean> {
   if (!token) return false;
   const key = secret();
@@ -35,9 +29,11 @@ export async function middleware(req: NextRequest) {
 
   if (pathname.startsWith("/app")) {
     if (!(await sessionOk(token))) {
-      const login = new URL("/api/auth/login", req.url);
-      login.searchParams.set("returnTo", pathname + req.nextUrl.search);
-      return NextResponse.redirect(login);
+      // No redirect loop — send them to landing with a hash that the
+      // client picks up to auto-open the auth modal.
+      const landing = new URL("/", req.url);
+      landing.hash = "signin";
+      return NextResponse.redirect(landing);
     }
     return NextResponse.next();
   }

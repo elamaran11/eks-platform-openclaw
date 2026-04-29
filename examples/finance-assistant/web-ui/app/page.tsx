@@ -9,10 +9,17 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import AuthModal from "./AuthModal";
 
 // All "Sign in" / "Get started" buttons go to the app's OAuth kickoff
 // route. Middleware + /api/auth/* handle the rest.
-const SIGNIN_HREF = "/api/auth/login?returnTo=/app";
+// Tiny event bus — sibling components across this file dispatch
+// "open-auth" to open the modal without prop-drilling.
+const openAuth = (tab: "signin" | "signup" = "signin") => {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("open-auth", { detail: { tab } }));
+  }
+};
 
 const DEMO_REPLIES: Record<string, string> = {
   savings: `Here's a framework to think about it — not a prescription.
@@ -96,6 +103,30 @@ const QUICK_ASKS = [
 ];
 
 export default function Landing() {
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
+
+  useEffect(() => {
+    const h = (e: Event) => {
+      const detail = (e as CustomEvent<{ tab?: "signin" | "signup" }>).detail;
+      setAuthTab(detail?.tab ?? "signin");
+      setAuthOpen(true);
+    };
+    window.addEventListener("open-auth", h);
+    // Auto-open when middleware bounced an unauthenticated /app visit
+    // back to / with #signin (or #signup)
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash.replace("#", "");
+      if (hash === "signin" || hash === "signup") {
+        setAuthTab(hash);
+        setAuthOpen(true);
+        // Clean the URL so a reload doesn't re-open the modal.
+        history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
+    }
+    return () => window.removeEventListener("open-auth", h);
+  }, []);
+
   return (
     <main className="min-h-screen overflow-hidden selection:bg-accent-500/30 selection:text-ink-50">
       <AnimatedBackground />
@@ -109,6 +140,7 @@ export default function Landing() {
       <Disclosure />
       <FinalCta />
       <Footer />
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} initialTab={authTab}/>
     </main>
   );
 }
@@ -170,10 +202,10 @@ function Nav() {
           <a href="#trust"    className="text-ink-400 hover:text-ink-50 transition">Why trust it</a>
         </div>
         <div className="flex items-center gap-3">
-          <a href={SIGNIN_HREF} className="hidden sm:inline text-xs font-medium text-ink-300 hover:text-ink-50 transition">Sign in</a>
-          <a href={SIGNIN_HREF} className="btn-gradient rounded-lg px-4 py-2 text-xs font-semibold transition hover:brightness-110">
+          <button onClick={() => openAuth("signin")} className="hidden sm:inline text-xs font-medium text-ink-300 hover:text-ink-50 transition">Sign in</button>
+          <button onClick={() => openAuth("signup")} className="btn-gradient rounded-lg px-4 py-2 text-xs font-semibold transition hover:brightness-110">
             Get started
-          </a>
+          </button>
         </div>
       </nav>
     </header>
@@ -214,10 +246,10 @@ function Hero() {
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.25 }}
           className="mt-12 flex items-center justify-center gap-3 flex-wrap"
         >
-          <a href={SIGNIN_HREF} className="btn-gradient group rounded-xl px-7 py-4 text-sm font-semibold flex items-center gap-2 shadow-2xl shadow-accent-500/30 transition-all hover:shadow-accent-500/60 hover:brightness-110">
+          <button onClick={() => openAuth("signin")} className="btn-gradient group rounded-xl px-7 py-4 text-sm font-semibold flex items-center gap-2 shadow-2xl shadow-accent-500/30 transition-all hover:shadow-accent-500/60 hover:brightness-110">
             Sign in to start
             <ArrowRight size={16} className="group-hover:translate-x-0.5 transition"/>
-          </a>
+          </button>
           <a href="#preview" className="rounded-xl px-7 py-4 text-sm font-semibold border border-ink-700 text-ink-200 hover:border-accent-500/50 hover:bg-ink-900/40 hover:text-ink-50 transition">
             Try it live ↓
           </a>
@@ -388,7 +420,7 @@ function LivePreview() {
         </form>
         <div className="mt-3 flex items-center justify-between text-[11px] text-ink-500">
           <span>Preview only — canned replies, no model calls.</span>
-          <a href={SIGNIN_HREF} className="text-accent-400 hover:text-accent-300 font-medium">Sign in for the real thing →</a>
+          <button onClick={() => openAuth("signin")} className="text-accent-400 hover:text-accent-300 font-medium">Sign in for the real thing →</button>
         </div>
       </div>
     </motion.div>
@@ -612,10 +644,10 @@ function FinalCta() {
           <span className="bg-gradient-to-br from-accent-400 via-accent-500 to-gold-500 bg-clip-text text-transparent">Start thinking clearly.</span>
         </h2>
         <div className="mt-10 flex items-center justify-center gap-3 flex-wrap">
-          <a href={SIGNIN_HREF} className="btn-gradient group rounded-xl px-8 py-4 text-sm font-semibold flex items-center gap-2 shadow-2xl shadow-accent-500/30 transition hover:shadow-accent-500/60 hover:brightness-110">
+          <button onClick={() => openAuth("signin")} className="btn-gradient group rounded-xl px-8 py-4 text-sm font-semibold flex items-center gap-2 shadow-2xl shadow-accent-500/30 transition hover:shadow-accent-500/60 hover:brightness-110">
             Sign in to start
             <ArrowRight size={16} className="group-hover:translate-x-0.5 transition"/>
-          </a>
+          </button>
           <a href="#preview" className="rounded-xl px-8 py-4 text-sm font-semibold border border-ink-700 text-ink-200 hover:border-accent-500/50 hover:text-ink-50 transition">
             Try the preview first
           </a>
@@ -637,7 +669,7 @@ function Footer() {
           <a href="#preview"  className="hover:text-ink-200 transition">Preview</a>
           <a href="#features" className="hover:text-ink-200 transition">Features</a>
           <a href="#trust"    className="hover:text-ink-200 transition">Trust</a>
-          <a href={SIGNIN_HREF} className="text-accent-400 hover:text-accent-300 font-medium">Sign in →</a>
+          <button onClick={() => openAuth("signin")} className="text-accent-400 hover:text-accent-300 font-medium">Sign in →</button>
         </div>
       </div>
     </footer>
