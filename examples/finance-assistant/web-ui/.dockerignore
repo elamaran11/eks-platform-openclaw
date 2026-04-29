@@ -1,7 +1,6 @@
-node_modules
-.next
+# Exclude nothing extra — we're packaging a prebuilt .next.
+# (No .git, no Dockerfile* to avoid self-include.)
 .git
-.env*
-Dockerfile
+Dockerfile*
 .dockerignore
 README.md
