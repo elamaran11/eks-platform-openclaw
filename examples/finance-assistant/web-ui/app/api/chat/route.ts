@@ -46,10 +46,11 @@ export async function POST(req: NextRequest) {
   // default Response(body) wrapping does not abort on upstream close.
   // Swallow "terminated"/"other side closed" from the reader — the
   // adapter legitimately closes the connection when it writes [DONE].
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       if (!upstream.body) { controller.close(); return; }
-      const reader = upstream.body.getReader();
+      reader = upstream.body.getReader();
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -69,11 +70,13 @@ export async function POST(req: NextRequest) {
         }
       } finally {
         try { controller.close(); } catch {}
+        try { reader?.releaseLock(); } catch {}
       }
     },
     cancel() {
-      // Client navigated away — best-effort close upstream.
-      try { upstream.body?.cancel(); } catch {}
+      // Client navigated away — cancel via reader (body is locked once
+      // getReader() was called). Body-level cancel throws ERR_INVALID_STATE.
+      try { reader?.cancel(); } catch {}
     },
   });
 
