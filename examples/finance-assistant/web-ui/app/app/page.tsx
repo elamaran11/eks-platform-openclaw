@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Shield, Sparkles, Cpu, ShieldCheck, Lock, TrendingUp, Home, GraduationCap, Target, Menu, X, LogOut, User } from "lucide-react";
+import { Send, Shield, Sparkles, Cpu, ShieldCheck, Lock, TrendingUp, Home, GraduationCap, Target, Menu, X, LogOut, User, Plus } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -191,6 +191,23 @@ export default function Page() {
           <Sparkles size={16} className="text-accent-400"/>
           <h1 className="text-sm font-semibold tracking-tight">Personal Finance Assistant</h1>
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent-500/10 border border-accent-500/30 text-accent-400 uppercase tracking-wider">OpenClaw · Kata VM</span>
+          <button
+            onClick={() => {
+              if (streaming) return;
+              setMessages([]);
+              // Rotate sessionId so the agent starts fresh, but keep the
+              // localStorage cache so a reload of the *same* tab resumes.
+              const s = `web-${Date.now().toString(36)}`;
+              try { localStorage.setItem("finassist.session", s); } catch {}
+              window.location.reload();
+            }}
+            disabled={streaming}
+            title="Start a new chat"
+            className="ml-4 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] text-ink-300 hover:text-ink-50 hover:bg-ink-900/80 border border-ink-800 hover:border-accent-500/40 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Plus size={12}/>
+            <span>New chat</span>
+          </button>
           <div className="ml-auto flex items-center gap-2 text-xs text-ink-400">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"/>
             <span>Connected</span>
