@@ -60,8 +60,8 @@ spec:
             - name: ROUTER_URL
               value: http://finance-session-router.finance-assistant.svc.cluster.local:18790
           resources:
-            requests: { cpu: 100m, memory: 256Mi }
-            limits:   { cpu: 500m, memory: 512Mi }
+            requests: { cpu: 200m, memory: 512Mi }
+            limits:   { cpu: "1",  memory: 1536Mi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
