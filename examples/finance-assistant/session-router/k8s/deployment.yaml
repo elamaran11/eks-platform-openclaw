@@ -86,6 +86,8 @@ spec:
               value: /etc/router/sandbox-template.json
             - name: IDLE_TTL_SECONDS
               value: "1800"
+            - name: SANDBOX_READY_TIMEOUT_MS
+              value: "300000"
           command:
             - sh
             - -c
