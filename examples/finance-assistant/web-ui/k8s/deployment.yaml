@@ -54,7 +54,7 @@ spec:
                   name: finance-ui-auth
                   key: session-secret
             - name: USE_SESSION_ROUTER
-              value: "false"
+              value: "true"
             - name: LEGACY_ADAPTER_URL
               value: http://finance-sandbox.finance-assistant.svc.cluster.local:18790
             - name: ROUTER_URL
