@@ -83,10 +83,12 @@ spec:
                       last_ts=$(date -d "$last_seen" -u +%s 2>/dev/null || echo 0)
                       age=$((now_ts - last_ts))
                       if [ "$age" -gt "$TTL" ]; then
-                        echo "reaping $name (suffix=$suffix, idle=${age}s)"
+                        echo "reaping $name (suffix=$suffix, idle=${age}s) — keeping PVC for workspace persistence"
                         kubectl delete sandbox.agents.x-k8s.io "$name" -n "$NS" --wait=false || true
                         kubectl delete svc "$name" -n "$NS" --ignore-not-found --wait=false || true
-                        kubectl delete pvc "finance-workspace-$suffix" -n "$NS" --ignore-not-found --wait=false || true
+                        # NOTE: PVC finance-workspace-$suffix is intentionally preserved
+                        # so the user's goals.md / snapshot.md / decisions.md survive
+                        # across idle-reap cycles. Router re-mounts it on next chat.
                       fi
                     done
               env:

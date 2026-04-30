@@ -69,6 +69,11 @@ resource "aws_eks_node_group" "kata" {
 
   labels = {
     "katacontainers.io/kata-runtime" = "true"
+    # Must match the EBS CSI node DaemonSet's nodeAffinity so the CSI
+    # daemon schedules on kata nodes too. Without this, kata-pod PVCs
+    # hang in Pending with "no topology key found for node" because no
+    # CSI driver has registered for the node.
+    "eks.amazonaws.com/compute-type" = "auto"
   }
 
   taint {
