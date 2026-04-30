@@ -5,15 +5,6 @@ metadata:
   labels:
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/audit: restricted
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: finance-workspace
-  namespace: finance-assistant
-spec:
-  accessModes: [ReadWriteOnce]
-  storageClassName: ebs-gp3
-  resources:
-    requests:
-      storage: 5Gi
+# Per-user workspace PVCs are provisioned on demand by the session-router
+# with names like finance-workspace-<hash>. The old shared "finance-workspace"
+# PVC from the pre-PR3 setup is no longer needed.
