@@ -25,7 +25,7 @@ spec:
         - name: ui
           # v0.6.0: app-owned Cognito OAuth, public landing at /,
           # auth-gated /app + /api/chat via Next.js middleware.
-          image: 940019131157.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.8.7
+          image: 940019131157.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.8.8
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000

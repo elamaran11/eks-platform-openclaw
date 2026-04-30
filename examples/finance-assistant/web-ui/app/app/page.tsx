@@ -220,7 +220,13 @@ export default function Page() {
             <EmptyState onPick={(p) => send(p)} />
           ) : (
             <div className="max-w-3xl mx-auto space-y-6">
-              {messages.map((m) => <Message key={m.id} msg={m} />)}
+              {messages.map((m, i) => {
+                // Suppress the trailing empty assistant bubble while
+                // ThinkingIndicator is rendering its own F avatar —
+                // otherwise users see two F avatars stacked.
+                if (thinking && i === messages.length - 1 && m.role === "assistant" && !m.content) return null;
+                return <Message key={m.id} msg={m} />;
+              })}
               {thinking && <ThinkingIndicator/>}
             </div>
           )}
