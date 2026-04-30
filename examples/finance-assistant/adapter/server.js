@@ -22,7 +22,11 @@ const PORT = parseInt(process.env.PORT || "18790", 10);
 const OPENCLAW_CMD = process.env.OPENCLAW_CMD || "openclaw";
 const rawArgs = process.env.OPENCLAW_ARGS || "";
 const OPENCLAW_ARGS = rawArgs.trim() ? rawArgs.trim().split(/\s+/) : [];
-const DEFAULT_TIMEOUT_MS = 300000;
+// 15 min. Cold-start on a fresh per-user sandbox installs openclaw's
+// bundled plugins (amazon-bedrock SDK, acpx, etc.) before the first
+// response; that can take 60-120s on top of normal LLM time. Short
+// timeouts truncate the response and make the UI look frozen.
+const DEFAULT_TIMEOUT_MS = parseInt(process.env.ADAPTER_TIMEOUT_MS || "900000", 10);
 
 // Secrets are mounted as tmpfs files at /var/run/openclaw/*.
 // We read them into locals at startup, then drop the env var (if any)
