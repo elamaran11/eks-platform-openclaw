@@ -118,8 +118,8 @@ spec:
                       "api": "openai-completions",
                       "models": [
                         {
-                          "id": "claude-sonnet-4-6",
-                          "name": "Claude Sonnet 4.6 (Bedrock)",
+                          "id": "claude-haiku-4-5",
+                          "name": "Claude Haiku 4.5 (Bedrock)",
                           "reasoning": true,
                           "input": ["text", "image"],
                           "contextWindow": 200000,
@@ -131,7 +131,7 @@ spec:
                 },
                 "agents": {
                   "defaults": {
-                    "model": { "primary": "litellm/claude-sonnet-4-6" },
+                    "model": { "primary": "litellm/claude-haiku-4-5" },
                     "workspace": "/workspace"
                   }
                 },
