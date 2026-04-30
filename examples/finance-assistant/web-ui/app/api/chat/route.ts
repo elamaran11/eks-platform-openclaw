@@ -34,11 +34,50 @@ export async function POST(req: NextRequest) {
     method: "POST",
     headers,
     body,
+    // Next.js undici has aggressive default socket timeouts that kill long
+    // SSE streams from the kata sandbox (first-turn plugin install + LLM
+    // can exceed 60s). Signal with a generous 15min timeout.
+    signal: AbortSignal.timeout(900000),
     // @ts-expect-error node fetch
     duplex: "half",
   });
 
-  return new Response(upstream.body, {
+  // Manually pump bytes from upstream into a ReadableStream so Next's
+  // default Response(body) wrapping does not abort on upstream close.
+  // Swallow "terminated"/"other side closed" from the reader — the
+  // adapter legitimately closes the connection when it writes [DONE].
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      if (!upstream.body) { controller.close(); return; }
+      const reader = upstream.body.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) controller.enqueue(value);
+        }
+      } catch (e) {
+        const msg = (e as Error).message || "";
+        // Expected at end-of-stream from the adapter; don't surface.
+        if (!/terminated|other side closed|AbortError/i.test(msg)) {
+          console.error("[api/chat] upstream read error:", msg);
+          try {
+            controller.enqueue(new TextEncoder().encode(
+              `data: ${JSON.stringify({ error: msg })}\n\ndata: [DONE]\n\n`
+            ));
+          } catch {}
+        }
+      } finally {
+        try { controller.close(); } catch {}
+      }
+    },
+    cancel() {
+      // Client navigated away — best-effort close upstream.
+      try { upstream.body?.cancel(); } catch {}
+    },
+  });
+
+  return new Response(stream, {
     status: upstream.status,
     headers: {
       "Content-Type": "text/event-stream",
