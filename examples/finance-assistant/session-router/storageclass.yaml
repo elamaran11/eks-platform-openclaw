@@ -1,0 +1,22 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ebs-gp3-kata
+  labels:
+    app.kubernetes.io/part-of: finance-assistant
+  annotations:
+    description: |
+      Kata-aware EBS gp3 storage class. Uses the standard ebs.csi.aws.com
+      driver (DaemonSet) which runs on both Auto Mode and kata-qemu
+      managed nodes. The default ebs-gp3 class provisioned by EKS Auto
+      Mode uses ebs.csi.eks.amazonaws.com which does not schedule on
+      non-auto-mode managed node groups (our kata node), so per-user
+      PVCs targeted at kata nodes must use THIS class.
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  fsType: ext4
+  encrypted: "true"
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

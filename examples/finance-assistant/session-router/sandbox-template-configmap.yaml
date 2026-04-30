@@ -126,7 +126,7 @@ data:
         },
         "spec": {
           "accessModes": ["ReadWriteOnce"],
-          "storageClassName": "ebs-gp3",
+          "storageClassName": "ebs-gp3-kata",
           "resources": { "requests": { "storage": "2Gi" } }
         }
       },
