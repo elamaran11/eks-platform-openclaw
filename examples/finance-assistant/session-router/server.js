@@ -186,31 +186,33 @@ async function waitForPodReady(name, deadlineMs) {
 
 function sseWrite(res, data) { res.write(`data: ${JSON.stringify(data)}\n\n`); }
 
-async function proxyChat(req, res, backendHost) {
+async function proxyChat(req, res, backendHost, bodyBuf) {
   return new Promise((resolve) => {
-    let body = "";
-    req.on("data", (c) => { body += c; });
-    req.on("end", () => {
-      const proxy = http.request(
-        {
-          host: backendHost, port: 18790, path: "/chat", method: "POST",
-          headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
-        },
-        (upstream) => {
-          res.writeHead(upstream.statusCode || 200, upstream.headers);
-          upstream.pipe(res);
-          upstream.on("end", () => resolve());
-        },
-      );
-      proxy.on("error", (err) => {
-        try {
-          sseWrite(res, { error: `upstream unavailable: ${err.code || err.message}` });
-          res.write("data: [DONE]\n\n"); res.end();
-        } catch {}
-        resolve();
-      });
-      proxy.write(body); proxy.end();
+    // Caller already sent writeHead for the SSE stream and wrote at
+    // least one status frame, so we do NOT touch headers here. We also
+    // take the body as an argument because the outer handler has
+    // already consumed the request stream — reading req again yields
+    // nothing and the adapter hangs waiting for a body.
+    const body = bodyBuf;
+    const proxy = http.request(
+      {
+        host: backendHost, port: 18790, path: "/chat", method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+      },
+      (upstream) => {
+        upstream.on("data", (chunk) => { try { res.write(chunk); } catch {} });
+        upstream.on("end", () => { try { res.end(); } catch {} resolve(); });
+        upstream.on("error", () => { try { res.end(); } catch {} resolve(); });
+      },
+    );
+    proxy.on("error", (err) => {
+      try {
+        sseWrite(res, { error: `upstream unavailable: ${err.code || err.message}` });
+        res.write("data: [DONE]\n\n"); res.end();
+      } catch {}
+      resolve();
     });
+    proxy.write(body); proxy.end();
   });
 }
 
@@ -222,10 +224,15 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(404); return res.end();
   }
 
+  // Buffer the request body up-front so both extractUserSub() and the
+  // downstream proxy can use it. http.IncomingMessage is a one-shot
+  // readable — reading it twice returns nothing.
+  const bodyChunks = [];
+  for await (const chunk of req) bodyChunks.push(chunk);
+  const bodyBuf = Buffer.concat(bodyChunks);
+
   // Phase-4 smoke test mode: pass-through to the legacy shared sandbox
-  // without provisioning anything. Lets us validate the SSE proxy path
-  // and x-amzn-oidc-data forwarding before flipping real user traffic
-  // to per-user sandboxes.
+  // without provisioning anything.
   if (READ_ONLY) {
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -233,7 +240,7 @@ const server = http.createServer(async (req, res) => {
       "Connection": "keep-alive",
       "X-Accel-Buffering": "no",
     });
-    await proxyChat(req, res, LEGACY_BACKEND);
+    await proxyChat(req, res, LEGACY_BACKEND, bodyBuf);
     return;
   }
 
@@ -264,7 +271,7 @@ const server = http.createServer(async (req, res) => {
     sseWrite(res, { status: "ready" });
     clearInterval(heartbeat);
     const backend = `${name}.${NAMESPACE}.svc.cluster.local`;
-    await proxyChat(req, res, backend);
+    await proxyChat(req, res, backend, bodyBuf);
   } catch (e) {
     clearInterval(heartbeat);
     console.error("[router]", e.message);
