@@ -11,11 +11,11 @@
 import { SignJWT, jwtVerify, createRemoteJWKSet, type JWTPayload } from "jose";
 
 export const COGNITO_REGION   = process.env.COGNITO_REGION   || "us-west-2";
-export const USER_POOL_ID     = process.env.COGNITO_USER_POOL_ID     || "us-west-2_Gpb9hjoLH";
-export const CLIENT_ID        = process.env.COGNITO_CLIENT_ID        || "3uelp9pbba5ijnph9ej03jclvi";
+export const USER_POOL_ID     = process.env.COGNITO_USER_POOL_ID     || "";
+export const CLIENT_ID        = process.env.COGNITO_CLIENT_ID        || "";
 export const CLIENT_SECRET    = process.env.COGNITO_CLIENT_SECRET    || "";
-export const DOMAIN_PREFIX    = process.env.COGNITO_DOMAIN_PREFIX    || "openclaw-finance-940019131157";
-export const APP_URL          = process.env.APP_URL                  || "https://finassist.elamaras.people.aws.dev";
+export const DOMAIN_PREFIX    = process.env.COGNITO_DOMAIN_PREFIX    || "";
+export const APP_URL          = process.env.APP_URL                  || "";
 export const SESSION_SECRET   = process.env.SESSION_SECRET           || "";
 
 export const COGNITO_BASE = `https://${DOMAIN_PREFIX}.auth.${COGNITO_REGION}.amazoncognito.com`;
@@ -38,14 +38,12 @@ export type Session = {
   sub: string;
   email?: string;
   exp: number;
-  id_token: string;
-  refresh_token?: string;
 };
 
 export async function signSession(s: Omit<Session, "exp"> & { ttlSeconds?: number }): Promise<string> {
   const ttl = s.ttlSeconds ?? 3600;
   return await new SignJWT({
-    sub: s.sub, email: s.email, id_token: s.id_token, refresh_token: s.refresh_token,
+    sub: s.sub, email: s.email,
   } as JWTPayload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -60,8 +58,6 @@ export async function verifySession(token: string): Promise<Session | null> {
       sub: payload.sub as string,
       email: payload.email as string | undefined,
       exp: payload.exp as number,
-      id_token: payload.id_token as string,
-      refresh_token: payload.refresh_token as string | undefined,
     };
   } catch { return null; }
 }
