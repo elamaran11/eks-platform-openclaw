@@ -21,36 +21,82 @@ Recommendation: **web UI as primary, Slack as a lightweight quick-question chann
 
 ## High-level architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ Browser (you)                                                       │
-│   │                                                                 │
-│   ▼ HTTPS                                                           │
-│ ALB (Cognito auth) ──► finance-ui (Next.js pod)                     │
-│                          │                                          │
-│                          │ HTTP /chat, /upload, /scenarios          │
-│                          ▼                                          │
-│                        Sandbox pod (Kata QEMU VM)                   │
-│                          ├─ openclaw agent                          │
-│                          ├─ /workspace PVC (encrypted, user-owned)  │
-│                          └─ outbound: LiteLLM only                  │
-│                                │                                    │
-│                                ▼                                    │
-│                              LiteLLM ──► Bedrock Guardrail          │
-│                                            │                        │
-│                                            ▼                        │
-│                                         Claude (Bedrock)            │
-└─────────────────────────────────────────────────────────────────────┘
+See [`generated-diagrams/openclaw-architecture.drawio`](../../generated-diagrams/openclaw-architecture.drawio) — page 2 "Finance Assistant Flow" — for the canonical diagram. The mermaid below matches what's actually shipping in production and renders inline on GitHub.
 
-Slack (optional side channel) ──► same Sandbox pod via Socket Mode
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Browser<br>(@amazon.com user)
+    participant ALB as ALB (HTTPS)
+    participant UI as finance-ui<br>(Next.js pod)
+    participant C as Cognito User Pool<br>(pre-signup Lambda:<br>@amazon.com only)
+    participant R as finance-session-router
+    participant K as Kubernetes API
+    participant S as finance-sandbox-<hash><br>(kata-qemu pod)
+    participant O as openclaw gateway<br>(:18789, v2026.5.2)
+    participant A as adapter sidecar<br>(:18790, SSE + redact)
+    participant L as LiteLLM
+    participant B as Bedrock Guardrail<br>+ Claude Haiku 4.5
+    participant EFS as EFS /workspace<br>subPath=<user-suffix>
+
+    rect rgb(240,248,255)
+    Note over U,C: Sign-in / sign-up (auto-confirmed for @amazon.com)
+    U->>ALB: POST /api/auth/signin
+    ALB->>UI: /api/auth/signin
+    UI->>C: InitiateAuth (USER_PASSWORD_AUTH)
+    C-->>UI: id_token + refresh_token
+    UI-->>U: Set fa_session cookie (JWT: {sub, email}, <1.5KB)
+    end
+
+    rect rgb(245,255,245)
+    Note over U,S: Warmup fires on sign-in success (fire-and-forget, @amazon.com only)
+    U->>UI: POST /api/warmup
+    UI->>UI: verify fa_session + re-check email domain == amazon.com
+    UI->>R: POST /warmup (x-amzn-oidc-data shaped header)
+    R->>R: hash(sub) → user-suffix (10 hex chars)
+    R->>K: ensure PVC + Sandbox + Service (withRetry, 4× exp backoff)
+    Note over K,S: Kata node provisioning if none available
+    S->>EFS: mount subPath=<user-suffix>
+    R-->>UI: 200 {status: "ready"}
+    end
+
+    rect rgb(255,250,240)
+    Note over U,B: Chat turn
+    U->>UI: POST /api/chat (SSE)
+    UI->>R: POST /chat (x-amzn-oidc-data shaped header)
+    R-->>UI: status: provisioning → ready → thinking
+    R->>A: HTTP POST /chat (SSE)
+    A->>O: loopback :18789 (openclaw agent --session-id)
+    O->>L: /v1/chat/completions (OpenAI compat)
+    L->>B: InvokeModel + Guardrail
+    B-->>L: reply
+    L-->>O: reply
+    O-->>A: reply (whole-reply JSON, openclaw 2026.5.2)
+    A-->>R: SSE (heartbeat 10s, secret redact)
+    R-->>UI: SSE
+    UI-->>U: reply + per-message timestamp + response-time label
+    end
+
+    Note over S,EFS: Reaper CronJob */10 * * * *: idle>30min → delete Sandbox + Service.<br>EFS PVC persists. Next sign-in → warmup → Sandbox re-mounts same subPath.
 ```
+
+Three fences against non-`@amazon.com` provisioning:
+
+1. **Cognito pre-signup Lambda** — rejects signup; auto-confirms amazon emails (no email-code loop)
+2. **Client-side check** in `AuthModal.kickWarmup()` — won't fire the request
+3. **Server-side check** in `/api/warmup` — 403 + log if domain mismatch (belt-and-suspenders for forged cookies)
 
 Key properties:
 
-- **User identity** comes from Cognito. The sandbox sees a `userId` claim and uses it to select the right PVC subdirectory. One Sandbox instance per user is the clean pattern; a shared sandbox with per-user workspaces works too if cost matters.
-- **No outbound internet from the Kata VM** except the LiteLLM service IP. NetworkPolicy enforces this. Even if the agent decides to "look something up," it physically can't reach the open internet.
-- **LiteLLM is unchanged** from the claw-bot setup. You add a new virtual API key for the finance sandbox with its own monthly budget cap (e.g., $20/mo) so nothing runs away.
-- **Bedrock Guardrail** gets a finance-specific overlay — denied topics for "specific stock picks," "guaranteed returns," "insider information"; PII filters tuned for SSN, account numbers, routing numbers.
+- **Per-user sandbox**, one Kata QEMU VM per Cognito `sub`. Hash produces a 10-hex suffix used for PVC + Sandbox + Service name.
+- **fa_session cookie** carries only `{sub, email}` — never the Cognito `id_token`/`refresh_token`. Keeps the cookie under 1.5KB so Chromium doesn't silently drop it (>4KB = dropped).
+- **No outbound internet from the Kata VM** except the LiteLLM Service ClusterIP. NetworkPolicy enforces this.
+- **openclaw pinned to 2026.5.2** (not `:latest`). 2026.4.29 re-ran full agent init per turn (~90s); 2026.5.2 is ~17s.
+- **System prompt** injected via `agents.defaults.systemPromptOverride` in `openclaw.json`, not via BOOT.md. `skipBootstrap: true` prevents the agent from greeting every turn with "who am I?"
+- **Chat history** survives across sessions in two layers:
+  - Server-side (source of truth): openclaw's `sessions/*.jsonl` on the EFS PVC
+  - Client-side (fast render): UI `localStorage` keyed on Cognito `sub`, last 200 messages with per-message timestamp + assistant response-time label
+- **Bedrock Guardrail** overlay — denied topics for "specific stock picks," "guaranteed returns," "insider information"; PII filters for SSN, account numbers, routing numbers.
 
 ## Deployment waves (fits your existing ArgoCD app-of-apps)
 
