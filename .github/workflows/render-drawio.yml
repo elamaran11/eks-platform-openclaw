@@ -1,0 +1,59 @@
+name: Render draw.io diagrams
+
+# Exports generated-diagrams/*.drawio → PNG on every push that touches them.
+# Runs on x86_64 GitHub-hosted runners — the container used here (Electron-
+# based drawio-export) is unreliable under arm64 qemu but works fine on
+# native x86_64.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "generated-diagrams/**.drawio"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Need a push ref so we can commit the rendered PNGs back.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Export drawio pages to PNG
+        uses: rlespinasse/drawio-export-action@v2
+        with:
+          path: generated-diagrams
+          format: png
+          output: generated-diagrams
+          # Flatten page index into filename so multi-page drawios render to
+          # one PNG per page (page 1 keeps the original filename; later pages
+          # get "<name>-<index>.png").
+          action-mode: export
+
+      - name: Move flat output into place
+        run: |
+          # rlespinasse writes to generated-diagrams/generated-diagrams/*.png;
+          # move everything up so README links resolve without a path change.
+          if [ -d generated-diagrams/generated-diagrams ]; then
+            cp -f generated-diagrams/generated-diagrams/*.png generated-diagrams/ 2>/dev/null || true
+            rm -rf generated-diagrams/generated-diagrams
+          fi
+          ls -la generated-diagrams/
+
+      - name: Commit regenerated PNGs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add generated-diagrams/*.png
+          if git diff --cached --quiet; then
+            echo "No PNG changes; skipping commit"
+            exit 0
+          fi
+          git commit -m "chore(diagrams): regenerate PNGs from drawio [skip ci]"
+          git push
