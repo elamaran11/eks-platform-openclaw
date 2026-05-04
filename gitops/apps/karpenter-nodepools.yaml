@@ -1,10 +1,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: openclaw
+  name: karpenter-nodepools
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-wave: "0"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -12,14 +12,10 @@ spec:
   source:
     repoURL: https://github.com/aws-samples/appmod-blueprints
     targetRevision: feature/openclaw-platform
-    path: openclaw-platform/gitops/helm/openclaw
+    path: openclaw-platform/gitops/helm/karpenter-nodepools
   destination:
     server: https://kubernetes.default.svc
-    namespace: openclaw-operator-system
+    namespace: kube-system
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [ServerSideApply=true]

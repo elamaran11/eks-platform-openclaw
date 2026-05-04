@@ -23,9 +23,10 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ui
-          # v0.6.0: app-owned Cognito OAuth, public landing at /,
-          # auth-gated /app + /api/chat via Next.js middleware.
-          image: 940019131157.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.9.7
+          # Image, Cognito values, and certificate ARN are substituted by
+          # openclaw-platform/scripts/render-finance-ui.sh from terraform outputs.
+          # The __PLACEHOLDERS__ below are NOT real values.
+          image: __ACCOUNT_ID__.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.9.7
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
@@ -34,15 +35,15 @@ spec:
             - name: NODE_ENV
               value: production
             - name: APP_URL
-              value: https://finassist.elamaras.people.aws.dev
+              value: https://__FINANCE_UI_HOST__
             - name: COGNITO_REGION
               value: us-west-2
             - name: COGNITO_USER_POOL_ID
-              value: us-west-2_Gpb9hjoLH
+              value: __COGNITO_USER_POOL_ID__
             - name: COGNITO_CLIENT_ID
-              value: 3uelp9pbba5ijnph9ej03jclvi
+              value: __COGNITO_CLIENT_ID__
             - name: COGNITO_DOMAIN_PREFIX
-              value: openclaw-finance-940019131157
+              value: __COGNITO_DOMAIN_PREFIX__
             - name: COGNITO_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -101,10 +102,9 @@ spec:
       targetPort: 3000
 ---
 # Single ingress, NO ALB-level auth. The Next.js app owns the Cognito
-# OAuth flow via /api/auth/* routes and gates /app + /api/chat via
+# OAuth flow via /api/auth/* routes and gates /chat + /api/chat via
 # middleware. This lets / (the landing page) stay public on the same
-# hostname as the authenticated app — something ALB action-split auth
-# could not do on EKS Auto Mode's bundled controller.
+# hostname as the authenticated app.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -115,13 +115,13 @@ metadata:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: '443'
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:940019131157:certificate/2d6b2f41-9673-4c9e-a6ad-daa34982ced7
-    external-dns.alpha.kubernetes.io/hostname: finassist.elamaras.people.aws.dev
+    alb.ingress.kubernetes.io/certificate-arn: __ACM_CERTIFICATE_ARN__
+    external-dns.alpha.kubernetes.io/hostname: __FINANCE_UI_HOST__
     alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=300
 spec:
   ingressClassName: alb
   rules:
-    - host: finassist.elamaras.people.aws.dev
+    - host: __FINANCE_UI_HOST__
       http:
         paths:
           - path: /

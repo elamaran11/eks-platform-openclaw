@@ -94,6 +94,150 @@ For users who already live in Slack. Same Sandbox CRD, just with the Slack plugi
 
 Slack for quick questions on mobile; the web UI for scenario modeling and document upload. They share the same PVC and system prompt.
 
+---
+
+## Install — web UI (Option A)
+
+The web UI depends on the rest of the platform — EKS + Karpenter + Packer-baked Kata AMI + ArgoCD + LiteLLM + Cognito. If you don't have that running yet, follow the [top-level README](../../README.md) first and come back here.
+
+### Prerequisites
+
+- Platform `scripts/install.sh` has completed successfully (ArgoCD syncing, LiteLLM healthy, Cognito pool created, Bedrock Guardrail applied)
+- `@amazon.com` pre-signup Lambda attached to the Cognito pool:
+  ```bash
+  aws cognito-idp describe-user-pool --region us-west-2 \
+    --user-pool-id $(terraform -chdir=terraform output -raw finance_cognito_user_pool_id) \
+    --query 'UserPool.LambdaConfig.PreSignUp'
+  # → should print the ARN of <cluster>-presignup
+  ```
+- `kubectl` context pinned to the openclaw cluster:
+  ```bash
+  aws eks update-kubeconfig --region us-west-2 --name openclaw-eks
+  kubectl config current-context   # must end with openclaw-eks
+  ```
+- `podman` (or `docker`) on your workstation for the image build
+- `finance_ui_host` value in `terraform/terraform.tfvars` points at a DNS name on your Route53-managed zone (external-dns will create the ALB A-record)
+
+### Step 1 — render the deployment manifest
+
+The manifest in `web-ui/k8s/deployment.yaml` uses `__PLACEHOLDER__` tokens for values that come from `terraform output`. The script substitutes them in place:
+
+```bash
+./scripts/render-finance-ui.sh v0.9.7
+# ACCOUNT_ID, COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, COGNITO_DOMAIN_PREFIX,
+# ACM_CERTIFICATE_ARN, FINANCE_UI_HOST get substituted into deployment.yaml.
+```
+
+Review the diff, commit, push. ArgoCD will sync it on the next reconcile (wave 5).
+
+```bash
+git diff examples/finance-assistant/web-ui/k8s/deployment.yaml
+git add examples/finance-assistant/web-ui/k8s/deployment.yaml
+git commit -m "render: finance-ui v0.9.7"
+git push
+```
+
+### Step 2 — build + push the UI image
+
+```bash
+cd examples/finance-assistant/web-ui
+
+# Login to ECR
+aws ecr get-login-password --region us-west-2 \
+  | podman login --username AWS --password-stdin \
+    $(terraform -chdir=../../../terraform output -raw finance_ui_ecr_url | cut -d/ -f1)
+
+# Build for the cluster's amd64 nodes
+podman build --platform linux/amd64 -t finance-ui:v0.9.7 .
+
+# Tag + push to ECR
+ECR=$(terraform -chdir=../../../terraform output -raw finance_ui_ecr_url)
+podman tag finance-ui:v0.9.7 $ECR:v0.9.7
+podman push $ECR:v0.9.7
+```
+
+### Step 3 — watch ArgoCD roll it out
+
+```bash
+kubectl -n argocd get app finance-assistant-ui -w
+# SYNC STATUS should flip to Synced, HEALTH to Healthy within ~2 min.
+
+kubectl -n finance-assistant get pods
+# finance-ui-*               Running
+# finance-session-router-*   2/2 Running
+```
+
+### Step 4 — first sign-in (this is where warmup happens)
+
+Open `https://<finance_ui_host>/` in a browser. On first load you'll see the landing page. Click **Sign in to start**, create an account with your `@amazon.com` email. The pre-signup Lambda auto-confirms (no email-code screen); the UI fires `POST /api/warmup` fire-and-forget, which provisions your per-user Kata sandbox in the background during the ~1s sign-in roundtrip.
+
+First question latency: ~20-30s (sandbox still provisioning or warming). Subsequent questions in the same browser: ~16-20s (Claude Haiku 4.5 inference time).
+
+### Step 5 — verify end-to-end
+
+```bash
+# 1. Cookie is set, under 1.5KB
+curl -sk -D - -X POST https://<finance_ui_host>/api/auth/signin \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@amazon.com","password":"..."}' -o /dev/null \
+  | awk '/[Ss]et-[Cc]ookie.*fa_session/ {print "cookie line len:", length($0)}'
+
+# 2. Non-amazon.com signup is rejected by the pre-signup Lambda
+curl -sk -X POST https://<finance_ui_host>/api/auth/signup \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"someone@gmail.com","password":"TestPass1234!Abc","name":"T"}'
+#  → {"error":"Signup is restricted to @amazon.com email addresses...","code":"UserLambdaValidationException"}
+
+# 3. Your per-user sandbox exists
+kubectl -n finance-assistant get sandbox.agents.x-k8s.io -l finance.x-k8s.io/user-suffix
+```
+
+### Three @amazon.com fences
+
+1. **Cognito pre-signup Lambda** (`terraform/lambda_presignup.tf`) — rejects signup for any other domain, auto-confirms amazon addresses
+2. **Client-side check** (`web-ui/app/AuthModal.tsx`, `kickWarmup()`) — won't even fire `/api/warmup` unless the email ends with `@amazon.com`
+3. **Server-side check** (`web-ui/app/api/warmup/route.ts`) — 403s the warmup request if the cookie's email domain mismatches, defending against a forged session cookie
+
+### Day-2 operations
+
+**Upgrade the UI image** — bump the tag in `web-ui/k8s/deployment.yaml` (or re-run `scripts/render-finance-ui.sh <new-tag>`), commit, push. ArgoCD syncs.
+
+**Change the system prompt** — edit `system-prompt-configmap.yaml`, commit, push. For existing users to pick it up, evict their sandboxes so they re-provision with the new ConfigMap mounted:
+
+```bash
+kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l finance.x-k8s.io/user-suffix
+```
+
+EFS workspaces survive the eviction; chat history resumes on the next sign-in.
+
+**Switch the default model** — edit `session-router/sandbox-template-configmap.yaml`; the `agents.defaults.model.primary` value inside the gateway container command (`litellm/claude-haiku-4-5` → `litellm/claude-opus-4-6` etc.). Apply + restart the router + evict sandboxes:
+
+```bash
+kubectl apply -f examples/finance-assistant/session-router/sandbox-template-configmap.yaml
+kubectl -n finance-assistant rollout restart deploy/finance-session-router
+kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l finance.x-k8s.io/user-suffix
+```
+
+**Teardown just the finance-assistant app** (leave the rest of the platform up):
+
+```bash
+kubectl -n argocd delete app finance-assistant-ui finance-assistant-sandbox --cascade=foreground
+kubectl delete namespace finance-assistant   # wipes per-user sandboxes + EFS access points
+```
+
+The Cognito user pool, Bedrock Guardrail, and LiteLLM persist (terraform-managed, not Argo-managed). You can redeploy the app on top of them without re-creating accounts.
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Landing page 200 but clicking "Sign in to start" does nothing | UI hydration failed; React module IDs colliding | Confirm `app/chat/` directory exists and `app/app/` does NOT (the two collapse to the same webpack module). `kubectl rollout restart deploy/finance-ui` |
+| Valid signin → `/chat` bounces back to `/#signin` in a loop | Cookie >4KB, Chromium silently drops it | `lib/set-session.ts` must only put `{sub, email}` in the JWT, never `id_token`/`refresh_token` |
+| "⚠️ HTTP request failed" banner on first question | Router k8s API blip during provisioning | Router has `withRetry` around k8s calls (4× exp backoff). If this still happens, check `kubectl logs -n finance-assistant deploy/finance-session-router` for the underlying error and file an issue |
+| Every turn takes 75–95s | openclaw image is on a pre-2026.5.0 tag | Check `kubectl -n finance-assistant get sandbox.agents.x-k8s.io -o yaml \| grep image:` — pin to `ghcr.io/openclaw/openclaw:2026.5.2` or newer. Never use `:latest` |
+| Agent greets every turn with "I just came online, who am I?" | Bootstrap files seeding identity from workspace | `sandbox-template-configmap.yaml` gateway command must remove BOOT.md + openclaw identity files, and `openclaw.json` must have `agents.defaults.skipBootstrap: true` |
+| Agent says "your workspace is empty" on generic questions | System prompt told it to read workspace every turn | `system-prompt-configmap.yaml` "How you work" section must say "do NOT read workspace files unless the user references their own situation" |
+
 ## Files in this directory
 
 | File | Purpose |

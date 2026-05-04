@@ -1,64 +1,18 @@
-# Terraform state and credentials
-terraform/.terraform/
-terraform/terraform.tfstate
-terraform/terraform.tfstate.backup
-terraform/*.tfvars
-terraform/*.tfvars.json
-!terraform/terraform.tfvars.example
-
-# .terraform.lock.hcl is intentionally committed — pins provider versions
-
-# Kiro/Claude IDE
-.claude/
-.kiro/
-
-# Sensitive files
-*.pem
-*.key
-*.p12
-*.pfx
-.env
-.env.*
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Generated diagrams (regenerate with diagram tool)
-# generated-diagrams/ — tracked so images render in GitHub README
-
-# Cognito hosted-UI logo — generated from logo.svg via render-logo.sh
-terraform/cognito_ui/logo.png
-
-# Session-router rendered manifest — generated from deployment.yaml + server.js + package.json
-examples/finance-assistant/session-router/k8s/deployment.rendered.yaml
-
-# Logs
-*.log
-apply.log
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-.venv/
-venv/
-
-# Node
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfvars
+*.auto.tfvars
+tfplan
+tfplan.out
+*.zip
 node_modules/
-
-# Helm chart dependencies (downloaded at deploy time by ArgoCD)
-gitops/helm/*/charts/
-gitops/helm/*/Chart.lock
-
-# Next.js build output (baked into Docker image)
-examples/finance-assistant/web-ui/.next/
-examples/finance-assistant/web-ui/node_modules/
+.next/
+dist/
+build/
+.env
+.env.local
+*.log
+.DS_Store
+deployment.rendered.yaml
