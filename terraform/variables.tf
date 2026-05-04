@@ -40,6 +40,12 @@ variable "kata_instance_types" {
   default     = ["c5.metal", "m5.metal"]
 }
 
+variable "kata_ami_id" {
+  description = "Pre-built Kata AMI ID. If empty, Packer will bake one on first apply."
+  type        = string
+  default     = ""
+}
+
 variable "cluster_endpoint_public_access" {
   description = "Whether the EKS cluster API endpoint is publicly accessible"
   type        = bool
@@ -72,22 +78,19 @@ variable "gitops_target_revision" {
 variable "route53_zone_id" {
   description = "Route53 public hosted zone ID that external-dns manages records in"
   type        = string
-  default     = "Z03804463VDEET6154SUK"
 }
 
 variable "route53_zone_name" {
   description = "Route53 zone name (domain) external-dns filters on"
   type        = string
-  default     = "elamaras.people.aws.dev"
 }
 
 variable "wildcard_cert_arn" {
-  description = "ACM certificate ARN for *.elamaras.people.aws.dev (set in terraform.tfvars — not committed)"
+  description = "ACM certificate ARN for the wildcard domain (set in terraform.tfvars — not committed)"
   type        = string
 }
 
 variable "finance_ui_host" {
-  description = "Public hostname for the finance assistant UI"
+  description = "Public hostname for the finance assistant UI (e.g. finassist.example.com)"
   type        = string
-  default     = "finassist.elamaras.people.aws.dev"
 }

@@ -30,13 +30,25 @@ Fargate gives you VM isolation but no control over the runtime. Lambda gives you
 
 **Bare-metal matters**: Kata requires hardware virtualization (VT-x/AMD-V). Nested virtualization on regular EC2 instances adds overhead and instability. `c5.metal` and `m5.metal` give direct hardware access — no hypervisor layer between the VM and the CPU.
 
-### 2. EKS Auto Mode for the control plane
+### 2. Karpenter for all workload nodes (no EKS Auto Mode)
 
-EKS Auto Mode manages Karpenter, VPC CNI, EBS CSI, CoreDNS, and the load balancer controller automatically. The platform team doesn't maintain node AMIs, addon versions, or scaling configuration for the general-purpose workloads. Only the kata bare-metal nodes require explicit management — everything else is hands-off.
+The cluster runs a small **managed system nodegroup** (2× `m5.large`) for ArgoCD, Karpenter itself, CoreDNS, monitoring, LiteLLM, and the UI/router pods. Everything else — including the kata bare-metal nodes — is provisioned by **Karpenter** via two NodePools:
 
-### 3. EKS Managed Node Group for kata nodes (not Karpenter)
+- `kata-nested` — `c8i` / `m8i` nested-virt, spot + on-demand (default; cheaper)
+- `kata-metal` — `c5.metal` / `i3.metal` / `m5.metal` on-demand (fallback)
 
-Karpenter is great for dynamic scaling but adds complexity for bare-metal nodes that need specific instance types and a custom runtime. A managed node group with `c5.metal` / `m5.metal` is simpler, gets automatic AMI updates, and integrates cleanly with EKS addons. The node group is sized conservatively (1 desired, 3 max) — kata VMs are heavyweight by design.
+Both NodePools are labeled `katacontainers.io/kata-runtime=true` and tainted `kata=true:NoSchedule`, so only kata-runtimeClass pods can schedule on them. Karpenter picks the cheapest node that satisfies the workload's requirements, scales to zero when idle, and replaces interrupted spot nodes automatically.
+
+**EKS Auto Mode is intentionally NOT used.** Auto Mode's built-in Karpenter does not support the custom AMI or the kata-deploy containerd config overlay that kata requires. Running Karpenter ourselves lets us:
+- Bind the kata NodePools to a Packer-baked AMI that has QEMU + kata pre-installed
+- Inject `containerd` runtime config via Karpenter `EC2NodeClass.userData`
+- Keep the system MNG tiny so bare-metal spend is purely demand-driven
+
+### 3. Pre-baked Kata AMI with Packer
+
+Installing QEMU + Kata Containers 3.27.0 + Cloud Hypervisor on every node boot is slow (~4 min) and fragile (package repos change). Instead, a **Packer build** runs once per cluster creation (or on `force_rebake=true`), producing a private AMI `openclaw-kata-<timestamp>` based on EKS-optimized AL2023 with everything pre-installed.
+
+`scripts/install.sh` automates this: packer builds the AMI, writes the ID to `terraform/terraform.auto.tfvars`, and `terraform apply` wires the AMI into both Karpenter NodePools via the `kata_ami_id` variable. Subsequent applies reuse the same AMI and skip the bake.
 
 ### 4. LiteLLM as the model gateway
 
@@ -60,14 +72,17 @@ Content filtering and PII anonymization happen at LiteLLM, not in the agent. Thi
 
 ### 7. ArgoCD app-of-apps with sync waves
 
-The platform has strict deployment ordering requirements: CNI must be ready before kata nodes join, kata runtime must be installed before agent pods schedule, LiteLLM must be up before agents start. ArgoCD sync waves enforce this:
+The platform has strict deployment ordering requirements: Karpenter must be up before any non-system node can be provisioned, kata runtime must be installed before agent pods schedule, LiteLLM must be up before agents start. ArgoCD sync waves enforce this:
 
 ```
-Wave -1: aws-node-kata (VPC CNI for kata nodes)
-Wave  0: kata (StorageClass)
-Wave  1: kata-deploy (runtime installer) + monitoring
-Wave  2: litellm
-Wave  3: openclaw (operator + sandbox)
+Wave -1: karpenter, agent-sandbox        # Karpenter controller + Sandbox CRD
+Wave  0: karpenter-nodepools, kata       # NodePools + EC2NodeClass, kata StorageClass
+Wave  1: kata-deploy, monitoring          # kata-qemu runtime install, Prometheus
+Wave  2: litellm                          # OpenAI-compat proxy to Bedrock
+Wave  3: openclaw, external-dns,          # Operator, DNS, ALB IngressClass
+         ingressclass-alb
+Wave  4: finance-assistant, slack         # Workload apps (Sandbox CRs, ConfigMaps)
+Wave  5: finance-assistant-ui             # UI + ALB Ingress + Cognito
 ```
 
 ---
@@ -163,9 +178,11 @@ Claw-bot connects to Slack via Socket Mode — no public endpoint or ingress req
 | `region` | `us-west-2` | AWS region |
 | `project_name` | `openclaw` | Resource name prefix |
 | `cluster_version` | `1.32` | Kubernetes version |
-| `enable_kata_nodes` | `true` | Deploy bare-metal Kata node group |
-| `kata_instance_types` | `["c5.metal","m5.metal"]` | Bare-metal instance types |
+| `enable_kata_nodes` | `true` | Enable Karpenter kata NodePools + bake Kata AMI |
+| `kata_ami_id` | — | Packer-baked AMI ID (written by `scripts/install.sh`) |
+| `force_rebake` | `false` | Force packer to rebuild the AMI on next apply |
 | `gitops_repo_url` | — | Git repo ArgoCD watches |
+| `gitops_target_revision` | `main` | Git branch/tag ArgoCD tracks |
 | `bedrock_region` | `us-west-2` | Bedrock inference region |
 
 ---
@@ -173,45 +190,67 @@ Claw-bot connects to Slack via Socket Mode — no public endpoint or ingress req
 ## Project structure
 
 ```
+packer/
+  kata-ami.pkr.hcl    # Pre-bakes Kata 3.27 + QEMU + Cloud Hypervisor onto AL2023
+  install-kata.sh     # Provisioner script executed inside the Packer build
+
 terraform/
-  eks.tf              # EKS Auto Mode + addons (vpc-cni, kube-proxy, ebs-csi)
-  kata.tf             # Kata managed node group + kube-proxy affinity patch
+  eks.tf              # EKS cluster — managed system nodegroup, cluster addons
+                      # (no Auto Mode; Karpenter handles workload nodes)
+  karpenter.tf        # Karpenter controller IAM/SQS, EKS access entry
+  packer-bake.tf      # Validates kata_ami_id is populated; exports as output
   litellm.tf          # LiteLLM namespace, secrets, API key
   bedrock_guardrail.tf
+  cognito.tf, cognito_ui.tf  # User pool + hosted UI branding
+  lambda_presignup.tf # @amazon.com-only signup enforcement
+  efs.tf              # EFS filesystem for per-user finance-assistant workspaces
 
 gitops/
   apps/               # ArgoCD Applications (app-of-apps)
-    aws-node-kata.yaml    # VPC CNI for kata nodes (wave -1)
-    kata.yaml             # StorageClass (wave 0)
-    kata-deploy.yaml      # Kata runtime installer (wave 1)
-    litellm.yaml          # LiteLLM proxy (wave 2)
-    openclaw.yaml         # OpenClaw operator + sandbox (wave 3)
-    monitoring.yaml       # Prometheus + Grafana (wave 1)
+    karpenter.yaml            # Karpenter controller (wave -1)
+    agent-sandbox.yaml        # Sandbox CRD (wave -1)
+    karpenter-nodepools.yaml  # NodePools + EC2NodeClass (wave 0)
+    kata.yaml                 # kata StorageClass (wave 0)
+    kata-deploy.yaml          # kata-qemu runtime installer (wave 1)
+    monitoring.yaml           # Prometheus + Grafana (wave 1)
+    litellm.yaml              # LiteLLM proxy (wave 2)
+    openclaw.yaml             # OpenClaw operator (wave 3)
+    external-dns.yaml         # Route53 external-dns (wave 3)
+    ingressclass-alb.yaml     # ALB IngressClass (wave 3)
+    finance-assistant.yaml    # Finance-assistant namespace + sandbox (wave 4)
+    slack.yaml                # Slack sandbox (wave 4)
 
   helm/
-    kata-deploy/      # kata-deploy DaemonSet + kubelet-restart DaemonSet
-    aws-node/         # VPC CNI DaemonSet for non-auto-mode kata nodes
-    litellm/          # LiteLLM proxy with sitecustomize.py Bedrock patch
-    openclaw/         # OpenClaw operator + Sandbox CRD
+    karpenter-nodepools/  # kata-nested + kata-metal NodePools, EC2NodeClass
+    kata-deploy/          # kata-deploy DaemonSet + kubelet-restart DaemonSet
+    litellm/              # LiteLLM proxy with sitecustomize.py Bedrock patch
+    openclaw/             # OpenClaw Sandbox CRD + related manifests
+
+examples/
+  finance-assistant/    # Per-user finance-assistant app (Sandbox + web-ui + router)
+  slack/                # Slack-as-frontend Sandbox
 
 scripts/
-  install.sh          # Full deploy: terraform + ArgoCD bootstrap
-  cleanup.sh          # Full teardown
+  install.sh            # Full deploy: packer bake → terraform apply → ArgoCD bootstrap
+  cleanup.sh            # Full teardown
+  render-finance-ui.sh  # Substitutes terraform outputs into finance-ui deployment.yaml
 ```
 
 ---
 
 ## How kata nodes bootstrap
 
-EKS Auto Mode doesn't deploy `aws-node` (VPC CNI) to non-auto-mode nodes. Getting kata nodes to Ready requires a specific sequence:
+Since we run Karpenter ourselves (not EKS Auto Mode's built-in), getting kata nodes to Ready is a clean sequence — no `aws-node` DaemonSet for non-auto-mode nodes, no kube-proxy affinity workarounds. Order:
 
-1. **`vpc-cni` EKS addon** (terraform) — provides CNI before the node group creation times out. A DaemonSet can't solve this because it can't schedule until the node is Ready — a chicken-and-egg that only an EKS-managed addon breaks.
+1. **Packer-baked AMI** (before terraform apply) — `scripts/install.sh` runs Packer to produce `openclaw-kata-<timestamp>` with Kata 3.27 + QEMU + Cloud Hypervisor already installed. Writes the AMI ID to `terraform/terraform.auto.tfvars`.
 
-2. **`kube-proxy` affinity patch** (terraform `null_resource`) — by default kube-proxy only targets `eks.amazonaws.com/compute-type=auto` nodes. Kata nodes are a managed node group, not auto-mode. Without kube-proxy, `kata-deploy` can't reach the Kubernetes API to complete installation.
+2. **Karpenter controller** (ArgoCD wave -1) — installed via the upstream Karpenter Helm chart, uses IRSA via Pod Identity. Watches Pending pods and provisions nodes on demand.
 
-3. **`kata-deploy` DaemonSet** (ArgoCD wave 1) — installs kata-qemu runtime binaries. Targets `katacontainers.io/kata-runtime=true`, a label only applied *after* installation completes, so it never runs on uninitialized nodes.
+3. **Karpenter NodePools + EC2NodeClass** (ArgoCD wave 0) — `kata-nested` and `kata-metal` NodePools both reference the baked AMI by ID and apply containerd userData for the kata-qemu runtime. Subnet + SG discovery via `karpenter.sh/discovery=<cluster-name>` tag.
 
-4. **`kata-kubelet-restart` DaemonSet** (ArgoCD wave 1) — `kata-deploy` restarts containerd during installation, breaking the kubelet's CRI socket connection. This DaemonSet restarts kubelet after installation to reconnect it. Without this, the node goes NotReady ~4 minutes after kata-deploy finishes.
+4. **kata-deploy DaemonSet** (ArgoCD wave 1) — DaemonSet runs only on nodes labeled `katacontainers.io/kata-runtime=true` (which Karpenter applies from the NodePool). It installs the `kata-qemu` RuntimeClass and symlinks binaries — most of the work is already done because the AMI is pre-baked.
+
+5. **Workload pods** with `runtimeClassName: kata-qemu` — Karpenter sees a Pending pod with the required taint toleration + nodeSelector, provisions a kata NodePool node, the pod schedules, the QEMU VM boots.
 
 ---
 

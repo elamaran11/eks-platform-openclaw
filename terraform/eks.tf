@@ -11,14 +11,20 @@ module "eks" {
   subnet_ids               = module.vpc.private_subnets
   control_plane_subnet_ids = module.vpc.private_subnets
 
-  # EKS Auto Mode — manages Karpenter, VPC CNI, EBS CSI, CoreDNS, LB controller
-  cluster_compute_config = {
-    enabled    = true
-    node_pools = ["general-purpose", "system"]
+  # Managed system nodegroup — runs ArgoCD, Karpenter, CoreDNS, system workloads.
+  # No Auto Mode. Karpenter (installed via GitOps) handles all workload scaling.
+  eks_managed_node_groups = {
+    system = {
+      instance_types = ["m5.large"]
+      min_size       = 2
+      max_size       = 4
+      desired_size   = 2
+      ami_type       = "AL2023_x86_64_STANDARD"
+      labels         = { role = "system" }
+    }
   }
 
-  # EKS managed addons — for self-managed Karpenter kata nodes
-  # configuration_values bakes in correct affinity so kata nodes get these addons on fresh install
+  # Core EKS managed addons
   cluster_addons = {
     kube-proxy = {
       most_recent                 = true
@@ -30,24 +36,36 @@ module "eks" {
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
     }
+    vpc-cni = {
+      most_recent                 = true
+      resolve_conflicts_on_create = "OVERWRITE"
+      resolve_conflicts_on_update = "OVERWRITE"
+    }
+    eks-pod-identity-agent = {
+      most_recent                 = true
+      resolve_conflicts_on_create = "OVERWRITE"
+      resolve_conflicts_on_update = "OVERWRITE"
+    }
     aws-ebs-csi-driver = {
       most_recent                 = true
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
       service_account_role_arn    = aws_iam_role.ebs_csi.arn
     }
-    # VPC CNI for kata managed node group nodes (non-auto-mode)
-    # Auto Mode manages CNI internally for auto-mode nodes at a lower level;
-    # aws-node running on them too is harmless. Kata nodes need this addon
-    # to become Ready before the node group creation times out.
-    vpc-cni = {
+    aws-efs-csi-driver = {
       most_recent                 = true
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
+      service_account_role_arn    = aws_iam_role.efs_csi.arn
     }
   }
 
-  # Use EKS Access Entries API (GA 2024) — auditable via CloudTrail, no aws-auth ConfigMap
+  # Tag subnets for Karpenter auto-discovery
+  node_security_group_tags = {
+    "karpenter.sh/discovery" = local.cluster_name
+  }
+
+  # Use EKS Access Entries API — auditable via CloudTrail, no aws-auth ConfigMap
   authentication_mode                      = "API"
   enable_cluster_creator_admin_permissions = true
 

@@ -10,9 +10,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/elamaran11/eks-platform-openclaw
-    targetRevision: HEAD
-    path: gitops/helm/external-dns
+    repoURL: https://github.com/aws-samples/appmod-blueprints
+    targetRevision: feature/openclaw-platform
+    path: openclaw-platform/gitops/helm/external-dns
   destination:
     server: https://kubernetes.default.svc
     namespace: external-dns

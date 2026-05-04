@@ -8,9 +8,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/elamaran11/eks-platform-openclaw
-    targetRevision: main
-    path: examples/finance-assistant
+    repoURL: https://github.com/aws-samples/appmod-blueprints
+    targetRevision: feature/openclaw-platform
+    path: openclaw-platform/gitops/usecases/finance-assistant
     directory:
       include: '{workspace-pvc.yaml,networkpolicy.yaml,system-prompt-configmap.yaml,adapter-configmap.yaml,sandbox.yaml}'
   destination:
@@ -30,9 +30,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/elamaran11/eks-platform-openclaw
-    targetRevision: main
-    path: examples/finance-assistant/web-ui/k8s
+    repoURL: https://github.com/aws-samples/appmod-blueprints
+    targetRevision: feature/openclaw-platform
+    path: openclaw-platform/gitops/usecases/finance-assistant/web-ui/k8s
   destination:
     server: https://kubernetes.default.svc
     namespace: finance-assistant

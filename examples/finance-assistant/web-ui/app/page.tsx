@@ -366,7 +366,7 @@ function LivePreview() {
           <span className="w-2.5 h-2.5 rounded-full bg-ink-700"/>
         </div>
         <div className="flex-1 text-center text-[11px] text-ink-500 font-mono tracking-tight">
-          finassist.elamaras.people.aws.dev/app
+          your-domain.example.com/app
         </div>
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 uppercase tracking-wider">Live</span>
       </div>
