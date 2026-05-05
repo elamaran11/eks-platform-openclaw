@@ -2,6 +2,14 @@
 
 A read-only, privacy-first financial coach that runs inside a Kata QEMU VM on EKS. No bank, brokerage, or credential access — ever. The agent is useful precisely *because* of that constraint: it becomes a thinking partner, not a transactor.
 
+## Architecture overview
+
+![Finance Assistant Flow](../../generated-diagrams/finance-assistant-flow.png)
+
+A web browser signs in via Amazon Cognito (gated to `@amazon.com` addresses by a pre-signup Lambda). The Next.js UI (`finance-ui`) sets a short HttpOnly session cookie, then fires `/api/warmup` so a per-user Kata QEMU VM is provisioned in the background while the user is still deciding what to ask. A `session-router` pod ensures a PVC + `Sandbox` CR + Service exist for every authenticated Cognito `sub`. Karpenter provisions the Kata node on demand from a Packer-baked AMI that already has Kata Containers 3.27 + QEMU + Cloud Hypervisor installed — no per-boot install time. Once the sandbox is up, `/api/chat` streams SSE through the router into the sandbox's adapter sidecar, which forwards to the `openclaw` gateway on `:18789`. The gateway calls LiteLLM, which routes to Bedrock Guardrail + Claude (Opus 4.6 primary, Haiku 4.5 fallback) via Pod Identity — no static keys. Per-user `/workspace` lives on EFS and survives the reaper CronJob's 30-minute idle-evictions, so chat history and workspace files come back instantly on next sign-in.
+
+Three separate fences keep non-`@amazon.com` accounts from ever provisioning a Kata pod: (1) the Cognito pre-signup Lambda rejects signups outright, (2) the UI won't fire `/api/warmup` unless the email ends with `@amazon.com`, (3) `/api/warmup` re-checks server-side before calling the router — defending against a forged or replayed session cookie.
+
 ## The design principle
 
 Most "AI financial assistants" try to be robo-advisors — they need Plaid, Yodlee, or direct broker APIs, and their value proposition is automation. That's a crowded, high-risk space: credentials leak, OAuth scopes creep, and a misbehaving agent can drain an account.
