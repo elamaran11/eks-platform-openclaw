@@ -8,9 +8,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/aws-samples/appmod-blueprints
-    targetRevision: feature/openclaw-platform
-    path: openclaw-platform/gitops/usecases/slack
+    repoURL: https://github.com/elamaran11/eks-platform-openclaw
+    targetRevision: main
+    path: examples/slack
   destination:
     server: https://kubernetes.default.svc
     namespace: openclaw
