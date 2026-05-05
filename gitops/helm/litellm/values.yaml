@@ -82,7 +82,7 @@ litellm-helm:
 
       - model_name: claude-opus-4-6
         litellm_params:
-          model: bedrock/us.anthropic.claude-opus-4-20250514-v1:0
+          model: bedrock/us.anthropic.claude-opus-4-7
           aws_region_name: "os.environ/AWS_REGION"
           drop_params: true
           cache_control_injection_points:
@@ -124,10 +124,13 @@ litellm-helm:
 
     router_settings:
       allowed_fails: 3
-      # Fall back fast→deep so a Haiku failure doesn't drop the user.
+      # Fallback chain: if primary errors (Bedrock 404/access/throttling),
+      # LiteLLM retries the next model in the list. Opus-first users
+      # degrade to Haiku → Sonnet before the error reaches the agent.
       fallbacks:
-        - claude-fast: ["claude-sonnet-4-6"]
+        - claude-opus-4-6: ["claude-haiku-4-5", "claude-sonnet-4-6"]
         - claude-haiku-4-5: ["claude-sonnet-4-6"]
+        - claude-fast: ["claude-sonnet-4-6"]
 
     key_management_settings:
       store_virtual_keys: true
