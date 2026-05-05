@@ -118,7 +118,9 @@ spec:
               exec node dist/index.js gateway --bind=lan --port 18789 --allow-unconfigured --verbose
           ports:
             - containerPort: 18789
+              protocol: TCP
             - containerPort: 18790
+              protocol: TCP
           volumeMounts:
             - mountPath: /home/node/.openclaw
               name: workspaces-vol

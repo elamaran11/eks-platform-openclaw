@@ -5,9 +5,9 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-MANIFEST="$ROOT/gitops/usecases/finance-assistant/web-ui/k8s/deployment.yaml"
+MANIFEST="$ROOT/examples/finance-assistant/web-ui/k8s/deployment.yaml"
 EXTDNS_VALUES="$ROOT/gitops/helm/external-dns/values.yaml"
-cd "$ROOT/infra/terraform"
+cd "$ROOT/terraform"
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ECR_URL=$(terraform output -raw finance_ui_ecr_url)
@@ -39,4 +39,4 @@ sed -i.bak \
 rm -f "${EXTDNS_VALUES}.bak"
 
 echo "==> Done. Review the diffs, then commit + push so ArgoCD syncs."
-echo "    git diff openclaw-platform/gitops/"
+echo "    git diff examples/finance-assistant/web-ui/k8s/deployment.yaml gitops/helm/external-dns/"
