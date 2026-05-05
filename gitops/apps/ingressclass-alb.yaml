@@ -5,4 +5,6 @@ metadata:
   annotations:
     ingressclass.kubernetes.io/is-default-class: "true"
 spec:
-  controller: eks.amazonaws.com/alb
+  # Self-managed AWS Load Balancer Controller (not EKS Auto Mode's
+  # bundled controller, which uses eks.amazonaws.com/alb).
+  controller: ingress.k8s.aws/alb
