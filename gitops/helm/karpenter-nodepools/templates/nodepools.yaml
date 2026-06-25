@@ -60,10 +60,16 @@ spec:
           value: "true"
           effect: NoSchedule
       requirements:
-        - key: node.kubernetes.io/instance-type
+        # Family + vCPU floor instead of an explicit size list: Karpenter is free to
+        # pick any sufficiently large size in these validated (nested-virt-capable)
+        # families, which widens the spot pool. The floor leaves headroom for VM overhead.
+        - key: karpenter.k8s.aws/instance-family
           operator: In
           values:
-{{ toYaml .Values.kataNested.instanceTypes | indent 12 }}
+{{ toYaml .Values.kataNested.instanceFamilies | indent 12 }}
+        - key: karpenter.k8s.aws/instance-cpu
+          operator: Gt
+          values: [{{ .Values.kataNested.minVcpu | quote }}]
         - key: karpenter.sh/capacity-type
           operator: In
           values:
@@ -159,4 +165,153 @@ spec:
   disruption:
     consolidationPolicy: WhenEmptyOrUnderutilized
     consolidateAfter: {{ .Values.kataMetal.consolidateAfter }}
+{{- end }}
+{{- if .Values.kataFc.enabled }}
+---
+# =============================================================================
+# kata-fc: Firecracker VMM, running ALONGSIDE the kata-qemu pools.
+# Firecracker cannot use virtio-fs/overlayfs — it requires a block snapshotter —
+# so this nodepool's userData sets up a devmapper thin-pool and registers the
+# kata-fc containerd runtime against it. This is fully self-contained: it does
+# NOT depend on kata-deploy, and it does NOT touch the QEMU AMI or QEMU nodes.
+# The Firecracker binary + configuration-fc.toml already ship in the baked AMI's
+# kata static release under /opt/kata.
+# =============================================================================
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: kata-fc
+spec:
+  amiFamily: AL2023
+  amiSelectorTerms:
+    - id: {{ .Values.kataAmiId | quote }}
+  role: {{ .Values.nodeRole | quote }}
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: {{ .Values.clusterName | quote }}
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: {{ .Values.clusterName | quote }}
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 250Gi
+        volumeType: gp3
+        deleteOnTermination: true
+        encrypted: true
+  metadataOptions:
+    httpEndpoint: enabled
+    httpTokens: required
+  userData: |
+    MIME-Version: 1.0
+    Content-Type: multipart/mixed; boundary="//"
+
+    --//
+    Content-Type: text/x-shellscript; charset="us-ascii"
+
+    #!/bin/bash
+    # Firecracker prerequisites: a devmapper thin-pool + the fc kata config +
+    # the kata-fc containerd shim symlink. Binaries are pre-baked in the AMI.
+    set -euxo pipefail
+    exec >/var/log/kata-fc-install.log 2>&1
+
+    echo "[kata-fc] verifying /dev/kvm"
+    [ -e /dev/kvm ] || { echo "FATAL: /dev/kvm missing"; exit 1; }
+
+    echo "[kata-fc] devmapper tooling"
+    dnf install -y lvm2 device-mapper-persistent-data || true
+
+    echo "[kata-fc] selecting firecracker kata config"
+    install -d /etc/kata-containers
+    cp /opt/kata/share/defaults/kata-containers/configuration-fc.toml \
+       /etc/kata-containers/configuration-fc.toml
+
+    echo "[kata-fc] devmapper thin-pool (Firecracker needs block, not overlayfs)"
+    DATA_DIR=/var/lib/containerd/devmapper
+    mkdir -p "${DATA_DIR}"
+    DATA_FILE="${DATA_DIR}/data"; META_FILE="${DATA_DIR}/meta"
+    if [ ! -f "${DATA_FILE}" ]; then
+      touch "${DATA_FILE}" && truncate -s 100G "${DATA_FILE}"
+      touch "${META_FILE}" && truncate -s 10G "${META_FILE}"
+      DATA_DEV=$(losetup --find --show "${DATA_FILE}")
+      META_DEV=$(losetup --find --show "${META_FILE}")
+      LENGTH_SECTORS=$(( $(blockdev --getsize64 -q "${DATA_DEV}") / 512 ))
+      dmsetup create devpool \
+        --table "0 ${LENGTH_SECTORS} thin-pool ${META_DEV} ${DATA_DEV} 128 32768"
+    fi
+
+    echo "[kata-fc] linking kata-fc shim onto containerd PATH"
+    ln -sf /opt/kata/bin/containerd-shim-kata-v2 /usr/bin/containerd-shim-kata-fc-v2
+
+    echo "[kata-fc] install complete"
+
+    --//
+    Content-Type: application/node.eks.aws
+
+    apiVersion: node.eks.aws/v1alpha1
+    kind: NodeConfig
+    spec:
+      cluster:
+        name: {{ .Values.clusterName }}
+      containerd:
+        config: |
+          [plugins."io.containerd.grpc.v1.cri".containerd]
+            discard_unpacked_layers = false
+          [plugins."io.containerd.snapshotter.v1.devmapper"]
+            pool_name = "devpool"
+            root_path = "/var/lib/containerd/devmapper"
+            base_image_size = "10GB"
+            discard_blocks = true
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-fc]
+            runtime_type = "io.containerd.kata-fc.v2"
+            privileged_without_host_devices = true
+            snapshotter = "devmapper"
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-fc.options]
+            ConfigPath = "/etc/kata-containers/configuration-fc.toml"
+    --//--
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: kata-fc
+spec:
+  template:
+    metadata:
+      labels:
+        katacontainers.io/kata-runtime-fc: "true"
+        node-type: kata-fc
+        kata-fc-enabled: "true"
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: kata-fc
+      taints:
+        - key: kata-fc
+          value: "true"
+          effect: NoSchedule
+      requirements:
+        # Family + vCPU floor instead of an explicit size list: Karpenter is free to
+        # pick any sufficiently large size in these validated (nested-virt-capable)
+        # families, which widens the spot pool. The floor leaves headroom for VM overhead.
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values:
+{{ toYaml .Values.kataFc.instanceFamilies | indent 12 }}
+        - key: karpenter.k8s.aws/instance-cpu
+          operator: Gt
+          values: [{{ .Values.kataFc.minVcpu | quote }}]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values:
+{{ toYaml .Values.kataFc.capacityTypes | indent 12 }}
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+      expireAfter: 720h
+  limits:
+    cpu: {{ .Values.kataFc.cpuLimit }}
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: {{ .Values.kataFc.consolidateAfter }}
 {{- end }}

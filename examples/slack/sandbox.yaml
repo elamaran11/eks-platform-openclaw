@@ -9,7 +9,10 @@ spec:
       labels:
         sandbox: openclaw-slack-sandbox
     spec:
-      runtimeClassName: kata-qemu
+      # Firecracker VMM (kata-fc) instead of the default kata-qemu. Boots on the
+      # kata-fc nodepool (devmapper snapshotter). The other examples + the
+      # openclaw default remain on kata-qemu.
+      runtimeClassName: kata-fc
       serviceAccountName: openclaw-sandbox
       automountServiceAccountToken: true
       securityContext:
@@ -17,9 +20,9 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
       nodeSelector:
-        katacontainers.io/kata-runtime: "true"
+        katacontainers.io/kata-runtime-fc: "true"
       tolerations:
-        - key: kata
+        - key: kata-fc
           operator: Equal
           value: "true"
           effect: NoSchedule
