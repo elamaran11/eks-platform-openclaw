@@ -16,7 +16,7 @@ kata-deploy:
       effect: NoSchedule
     # Startup taint — kata-deploy must run *despite* it (it's what clears the node
     # for workloads once install finishes). The kata-readiness DaemonSet removes it.
-    - key: kata.io/runtime-not-ready
+    - key: katacontainers.io/runtime-not-ready
       operator: Exists
       effect: NoSchedule
   shims:

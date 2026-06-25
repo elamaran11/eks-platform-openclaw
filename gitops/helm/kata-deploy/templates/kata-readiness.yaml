@@ -1,7 +1,7 @@
 ---
 # kata-readiness — gates kata nodes until the runtime is actually usable.
 #
-# Karpenter brings kata nodes up carrying a startup taint (kata.io/runtime-not-ready).
+# Karpenter brings kata nodes up carrying a startup taint (katacontainers.io/runtime-not-ready).
 # kubelet will not bind workloads while it is present, but Karpenter ignores it when
 # provisioning, so there is no chicken-and-egg. This DaemonSet:
 #   1. lands early (it tolerates the startup taint, selects the STATIC kata-enabled label)
@@ -62,7 +62,7 @@ spec:
       # image instead of a privileged nsenter-capable one.
       #
       # Tolerate everything (Exists) so we land on the node *before* the runtime is
-      # ready — covers both the kata workload taint and the kata.io/runtime-not-ready
+      # ready — covers both the kata workload taint and the katacontainers.io/runtime-not-ready
       # startup taint we are responsible for removing.
       tolerations:
         - operator: Exists
@@ -88,8 +88,8 @@ spec:
                   -o jsonpath='{.metadata.labels.katacontainers\.io/kata-runtime}')" = "true" ]; do
                 sleep 5
               done
-              echo "[kata-readiness] kata-deploy done; removing startup taint kata.io/runtime-not-ready..."
-              kubectl taint node "${NODE_NAME}" kata.io/runtime-not-ready:NoSchedule- || true
+              echo "[kata-readiness] kata-deploy done; removing startup taint katacontainers.io/runtime-not-ready..."
+              kubectl taint node "${NODE_NAME}" katacontainers.io/runtime-not-ready:NoSchedule- || true
               echo "[kata-readiness] node ${NODE_NAME} is ready for kata workloads."
               sleep infinity
           env:

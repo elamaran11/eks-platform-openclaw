@@ -81,7 +81,7 @@ spec:
       # when deciding what to provision, but kubelet blocks workloads from binding
       # until it clears — so no kata-qemu pod lands before the runtime is ready.
       startupTaints:
-        - key: kata.io/runtime-not-ready
+        - key: katacontainers.io/runtime-not-ready
           effect: NoSchedule
       requirements:
         - key: node.kubernetes.io/instance-type
@@ -176,7 +176,7 @@ spec:
       # Removed by the kata-readiness DaemonSet once kata-deploy has labeled the
       # node katacontainers.io/kata-runtime=true (see kata-nested above).
       startupTaints:
-        - key: kata.io/runtime-not-ready
+        - key: katacontainers.io/runtime-not-ready
           effect: NoSchedule
       requirements:
         - key: node.kubernetes.io/instance-type
