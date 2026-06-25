@@ -26,7 +26,7 @@ spec:
           # Image, Cognito values, and certificate ARN are rendered by
           # scripts/render-finance-ui.sh from terraform outputs. This
           # file is checked in with live values for the current cluster.
-          image: 940019131157.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.9.7
+          image: 259732043995.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.9.7
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
@@ -35,15 +35,15 @@ spec:
             - name: NODE_ENV
               value: production
             - name: APP_URL
-              value: https://finassist.elamaras.people.aws.dev
+              value: https://finassist.advaitt.people.aws.dev
             - name: COGNITO_REGION
               value: us-west-2
             - name: COGNITO_USER_POOL_ID
-              value: us-west-2_tiALOdP0V
+              value: us-west-2_DbBjHVdfx
             - name: COGNITO_CLIENT_ID
-              value: 37auqdoc2egfafdijoga59inmp
+              value: 2f07c4kb1s464sa1cgptv7of9o
             - name: COGNITO_DOMAIN_PREFIX
-              value: openclaw-finance-940019131157
+              value: openclaw-finance-259732043995
             - name: COGNITO_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -115,13 +115,13 @@ metadata:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: '443'
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:940019131157:certificate/2d6b2f41-9673-4c9e-a6ad-daa34982ced7
-    external-dns.alpha.kubernetes.io/hostname: finassist.elamaras.people.aws.dev
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:259732043995:certificate/13149c82-ac12-496b-9a3d-7f388ed826d8
+    external-dns.alpha.kubernetes.io/hostname: finassist.advaitt.people.aws.dev
     alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=300
 spec:
   ingressClassName: alb
   rules:
-    - host: finassist.elamaras.people.aws.dev
+    - host: finassist.advaitt.people.aws.dev
       http:
         paths:
           - path: /
