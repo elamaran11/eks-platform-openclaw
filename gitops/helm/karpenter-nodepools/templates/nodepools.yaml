@@ -6,6 +6,10 @@ metadata:
   name: kata-nested
 spec:
   amiFamily: AL2023
+  # Enable nested KVM so the kata-qemu VMM can run inside the EC2 instance.
+  # Requires Karpenter >= 1.13 and EKS >= 1.36; only 8i-gen instances expose it.
+  cpuOptions:
+    nestedVirtualization: enabled
   amiSelectorTerms:
     - id: {{ .Values.kataAmiId | quote }}
   role: {{ .Values.nodeRole | quote }}
@@ -183,6 +187,10 @@ metadata:
   name: kata-fc
 spec:
   amiFamily: AL2023
+  # Enable nested KVM so the Firecracker VMM can run inside the EC2 instance.
+  # Requires Karpenter >= 1.13 and EKS >= 1.36; only 8i-gen instances expose it.
+  cpuOptions:
+    nestedVirtualization: enabled
   amiSelectorTerms:
     - id: {{ .Values.kataAmiId | quote }}
   role: {{ .Values.nodeRole | quote }}
