@@ -8,7 +8,7 @@
   - `kata-nested` — c8i/m8i nested-virt, spot + on-demand (default; cheaper)
   - `kata-metal` — c5.metal / i3.metal / m5.metal on-demand (fallback)
   Both labeled `katacontainers.io/kata-runtime=true`, tainted `kata=true:NoSchedule`.
-- **No EKS Auto Mode.** Auto Mode's built-in Karpenter does not support the custom AMI or the kata-deploy containerd config overlay that kata-qemu requires. Running Karpenter ourselves lets us pin the kata NodePools to a Packer-baked AMI that has QEMU + Kata 3.27 pre-installed, and inject containerd runtime config via `EC2NodeClass.userData`.
+- **No EKS Auto Mode.** Auto Mode's built-in Karpenter does not let us set `cpuOptions.nestedVirtualization` at launch or run a `modprobe` in userData, both of which kata-qemu requires. Running Karpenter ourselves lets us enable nested virtualization per NodePool, load `kvm_intel` at boot via `EC2NodeClass.userData`, and use the stock AL2023 AMI (kata-deploy installs the runtime at boot — no custom AMI).
 
 ## Waves
 
@@ -109,15 +109,15 @@ Secrets mount as tmpfs files (mode 0400) under `/var/run/openclaw/`. No env vars
 - ALB Ingress for finance-ui (Cognito-authed).
 - EFS security group allows NFS (2049) only from the EKS node SG.
 
-## AMI
+## AMI & Kata runtime
 
-Packer bakes `openclaw-kata-*` AMI on first `terraform apply`:
-- Base: EKS-optimized AL2023
-- Kata Containers 3.27.0 + QEMU + Cloud Hypervisor
+Nodes use the **stock EKS-optimized AL2023 AMI** (`alias: al2023@latest`) — no custom AMI is baked. The Kata runtime is installed at boot by the upstream **kata-deploy DaemonSet**:
+- Kata Containers (chart-pinned version) + QEMU, dropped into `/opt/kata`
 - kata configuration at `/etc/kata-containers/configuration-qemu.toml`
-- 250 GB gp3 EBS
+- containerd patched for the `kata-qemu` runtime + restarted; `kata-qemu` RuntimeClass created
+- 250 GB gp3 EBS root volume (set in the EC2NodeClass)
 
-Subsequent applies reuse the existing AMI (skip bake) unless `force_rebake=true` or install script changes.
+`kvm_intel` is loaded at boot via `EC2NodeClass.userData` (creating `/dev/kvm`); on `kata-nested` nodes, `cpuOptions.nestedVirtualization=enabled` first exposes Intel VT-x to the instance. Bumping the Kata version is a one-line change to the kata-deploy chart version — no rebake.
 
 ## Teardown
 

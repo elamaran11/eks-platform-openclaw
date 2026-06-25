@@ -28,23 +28,11 @@ variable "vpc_cidr" {
   default     = "10.0.0.0/16"
 }
 
-variable "enable_kata_nodes" {
-  description = "Whether to deploy bare-metal Kata container node group"
-  type        = bool
-  default     = true
-}
-
-variable "kata_instance_types" {
-  description = "Bare-metal instance types for Kata container nodes"
-  type        = list(string)
-  default     = ["c5.metal", "m5.metal"]
-}
-
-variable "kata_ami_id" {
-  description = "Pre-built Kata AMI ID. If empty, Packer will bake one on first apply."
-  type        = string
-  default     = ""
-}
+# Kata node provisioning is owned by the GitOps Karpenter NodePools
+# (gitops/helm/karpenter-nodepools), not Terraform. Nodes run the stock AL2023
+# AMI and kata-deploy installs the runtime — there is no Packer-baked AMI and no
+# managed kata node group, so enable_kata_nodes / kata_instance_types /
+# kata_ami_id are no longer needed here.
 
 variable "cluster_endpoint_public_access" {
   description = "Whether the EKS cluster API endpoint is publicly accessible"

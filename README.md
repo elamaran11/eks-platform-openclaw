@@ -2,7 +2,7 @@
 
 **Production-grade AI agents with hardware-level sandbox isolation on Amazon EKS.**
 
-Every agent conversation runs inside a Kata Containers QEMU virtual machine on bare-metal EC2. Not just a container — an actual VM with its own kernel. Agents connect to Slack, reason with Claude via AWS Bedrock, and are deployed entirely through GitOps.
+Every agent conversation runs inside a Kata Containers QEMU virtual machine on EC2 instances with hardware virtualization (nested-virt `c8i`/`m8i` by default). Not just a container — an actual VM with its own kernel. Agents connect to Slack, reason with Claude via AWS Bedrock, and are deployed entirely through GitOps.
 
 ![Architecture](generated-diagrams/openclaw-architecture.png)
 
@@ -16,7 +16,7 @@ AI agents execute code, browse the web, read files, and call external APIs. A co
 
 ### The solution: hardware VM isolation per agent
 
-This platform runs each OpenClaw agent inside a **Kata Containers QEMU virtual machine** on bare-metal EC2 (`c5.metal` / `m5.metal`). The agent process is isolated at the hardware level — it has its own kernel, its own memory space, and cannot escape to the host regardless of what it executes. The VM boundary is enforced by the CPU, not by Linux namespaces.
+This platform runs each OpenClaw agent inside a **Kata Containers QEMU virtual machine** on EC2 instances with hardware virtualization — by default `c8i` / `m8i` instances with **nested virtualization** enabled, with bare-metal (`c5.metal` / `m5.metal`) as a fallback. The agent process is isolated at the hardware level — it has its own kernel, its own memory space, and cannot escape to the host regardless of what it executes. The VM boundary is enforced by the CPU, not by Linux namespaces.
 
 This is the same isolation model used by AWS Fargate and AWS Lambda under the hood.
 
@@ -24,11 +24,11 @@ This is the same isolation model used by AWS Fargate and AWS Lambda under the ho
 
 ## Key design decisions
 
-### 1. Kata Containers on bare-metal, not Fargate or Lambda
+### 1. Kata Containers on EC2, not Fargate or Lambda
 
-Fargate gives you VM isolation but no control over the runtime. Lambda gives you isolation but no persistent state or long-running processes. OpenClaw agents need persistent workspace, long-running sessions, and direct Kubernetes API access for tool use. Kata on bare-metal gives all of that with full control.
+Fargate gives you VM isolation but no control over the runtime. Lambda gives you isolation but no persistent state or long-running processes. OpenClaw agents need persistent workspace, long-running sessions, and direct Kubernetes API access for tool use. Kata on EC2 (nested-virt `8i` instances, or bare-metal as fallback) gives all of that with full control.
 
-**Bare-metal matters**: Kata requires hardware virtualization (VT-x/AMD-V). Nested virtualization on regular EC2 instances adds overhead and instability. `c5.metal` and `m5.metal` give direct hardware access — no hypervisor layer between the VM and the CPU.
+**Hardware virtualization matters**: Kata requires VT-x/AMD-V. Historically that meant bare-metal `.metal` instances, since regular instances hid the CPU virtualization extensions. AWS now exposes them on `8i`-family instances (`c8i` / `m8i` / `r8i`) via **nested virtualization** (`cpuOptions.nestedVirtualization=enabled`) — the Nitro hypervisor (L0) passes Intel VT-x through to the instance (L1) so Kata's QEMU can run guest VMs (L2). This is cheaper and faster to provision than bare-metal, which is kept only as a fallback for capacity or latency-sensitive workloads.
 
 ### 2. Karpenter for all workload nodes (no EKS Auto Mode)
 
@@ -39,16 +39,16 @@ The cluster runs a small **managed system nodegroup** (2× `m5.large`) for ArgoC
 
 Both NodePools are labeled `katacontainers.io/kata-runtime=true` and tainted `kata=true:NoSchedule`, so only kata-runtimeClass pods can schedule on them. Karpenter picks the cheapest node that satisfies the workload's requirements, scales to zero when idle, and replaces interrupted spot nodes automatically.
 
-**EKS Auto Mode is intentionally NOT used.** Auto Mode's built-in Karpenter does not support the custom AMI or the kata-deploy containerd config overlay that kata requires. Running Karpenter ourselves lets us:
-- Bind the kata NodePools to a Packer-baked AMI that has QEMU + kata pre-installed
-- Inject `containerd` runtime config via Karpenter `EC2NodeClass.userData`
-- Keep the system MNG tiny so bare-metal spend is purely demand-driven
+**EKS Auto Mode is intentionally NOT used.** Auto Mode's built-in Karpenter does not let us set `cpuOptions.nestedVirtualization` on launch or load the KVM kernel module that kata requires. Running Karpenter ourselves lets us:
+- Enable nested virtualization per NodePool via `EC2NodeClass.cpuOptions.nestedVirtualization=enabled`
+- Load `kvm_intel` at boot via `EC2NodeClass.userData` so `/dev/kvm` exists before kata-deploy runs
+- Keep the system MNG tiny so kata node spend is purely demand-driven
 
-### 3. Pre-baked Kata AMI with Packer
+### 3. Kata runtime installed at boot by kata-deploy (no baked AMI)
 
-Installing QEMU + Kata Containers 3.27.0 + Cloud Hypervisor on every node boot is slow (~4 min) and fragile (package repos change). Instead, a **Packer build** runs once per cluster creation (or on `force_rebake=true`), producing a private AMI `openclaw-kata-<timestamp>` based on EKS-optimized AL2023 with everything pre-installed.
+Nodes run the **stock EKS-optimized AL2023 AMI** (`alias: al2023@latest`). The Kata runtime — binaries, guest kernel, `configuration-*.toml`, the containerd runtime handler, and the `kata-qemu` RuntimeClass — is installed at runtime by the upstream **`kata-deploy` DaemonSet** (`gitops/helm/kata-deploy`), which patches containerd and restarts it on each kata node.
 
-`scripts/install.sh` automates this: packer builds the AMI, writes the ID to `terraform/terraform.auto.tfvars`, and `terraform apply` wires the AMI into both Karpenter NodePools via the `kata_ami_id` variable. Subsequent applies reuse the same AMI and skip the bake.
+The one thing kata-deploy does *not* do is load host kernel modules, so the `EC2NodeClass.userData` runs `modprobe kvm_intel` (and persists it to `/etc/modules-load.d/kvm.conf`) at boot — `cpuOptions.nestedVirtualization` only makes VT-x *visible*; the guest OS must still load the module to create `/dev/kvm`. This removes the previous Packer bake step entirely: no custom AMI to build or maintain, and the Kata version is bumped by changing the `kata-deploy` chart version alone.
 
 ### 4. LiteLLM as the model gateway
 
@@ -178,9 +178,6 @@ Claw-bot connects to Slack via Socket Mode — no public endpoint or ingress req
 | `region` | `us-west-2` | AWS region |
 | `project_name` | `openclaw` | Resource name prefix |
 | `cluster_version` | `1.32` | Kubernetes version |
-| `enable_kata_nodes` | `true` | Enable Karpenter kata NodePools + bake Kata AMI |
-| `kata_ami_id` | — | Packer-baked AMI ID (written by `scripts/install.sh`) |
-| `force_rebake` | `false` | Force packer to rebuild the AMI on next apply |
 | `gitops_repo_url` | — | Git repo ArgoCD watches |
 | `gitops_target_revision` | `main` | Git branch/tag ArgoCD tracks |
 | `bedrock_region` | `us-west-2` | Bedrock inference region |
@@ -190,15 +187,10 @@ Claw-bot connects to Slack via Socket Mode — no public endpoint or ingress req
 ## Project structure
 
 ```
-packer/
-  kata-ami.pkr.hcl    # Pre-bakes Kata 3.27 + QEMU + Cloud Hypervisor onto AL2023
-  install-kata.sh     # Provisioner script executed inside the Packer build
-
 terraform/
   eks.tf              # EKS cluster — managed system nodegroup, cluster addons
                       # (no Auto Mode; Karpenter handles workload nodes)
   karpenter.tf        # Karpenter controller IAM/SQS, EKS access entry
-  packer-bake.tf      # Validates kata_ami_id is populated; exports as output
   litellm.tf          # LiteLLM namespace, secrets, API key
   bedrock_guardrail.tf
   cognito.tf, cognito_ui.tf  # User pool + hosted UI branding
@@ -231,7 +223,7 @@ examples/
   slack/                # Slack-as-frontend Sandbox
 
 scripts/
-  install.sh            # Full deploy: packer bake → terraform apply → ArgoCD bootstrap
+  install.sh            # Full deploy: terraform apply → ArgoCD bootstrap
   cleanup.sh            # Full teardown
   render-finance-ui.sh  # Substitutes terraform outputs into finance-ui deployment.yaml
 ```
@@ -242,13 +234,13 @@ scripts/
 
 Since we run Karpenter ourselves (not EKS Auto Mode's built-in), getting kata nodes to Ready is a clean sequence — no `aws-node` DaemonSet for non-auto-mode nodes, no kube-proxy affinity workarounds. Order:
 
-1. **Packer-baked AMI** (before terraform apply) — `scripts/install.sh` runs Packer to produce `openclaw-kata-<timestamp>` with Kata 3.27 + QEMU + Cloud Hypervisor already installed. Writes the AMI ID to `terraform/terraform.auto.tfvars`.
+1. **Terraform apply** — `scripts/install.sh` provisions VPC, EKS, the system MNG, Karpenter IAM/SQS, and ArgoCD. No AMI bake step; nodes use the stock EKS-optimized AL2023 AMI.
 
 2. **Karpenter controller** (ArgoCD wave -1) — installed via the upstream Karpenter Helm chart, uses IRSA via Pod Identity. Watches Pending pods and provisions nodes on demand.
 
-3. **Karpenter NodePools + EC2NodeClass** (ArgoCD wave 0) — `kata-nested` and `kata-metal` NodePools both reference the baked AMI by ID and apply containerd userData for the kata-qemu runtime. Subnet + SG discovery via `karpenter.sh/discovery=<cluster-name>` tag.
+3. **Karpenter NodePools + EC2NodeClass** (ArgoCD wave 0) — `kata-nested` and `kata-metal` NodePools use the `al2023@latest` AMI alias. The `kata-nested` EC2NodeClass sets `cpuOptions.nestedVirtualization=enabled`; both run `modprobe kvm_intel` in `userData` so `/dev/kvm` exists before kata-deploy lands. Subnet + SG discovery via `karpenter.sh/discovery=<cluster-name>` tag.
 
-4. **kata-deploy DaemonSet** (ArgoCD wave 1) — DaemonSet runs only on nodes labeled `katacontainers.io/kata-runtime=true` (which Karpenter applies from the NodePool). It installs the `kata-qemu` RuntimeClass and symlinks binaries — most of the work is already done because the AMI is pre-baked.
+4. **kata-deploy DaemonSet** (ArgoCD wave 1) — runs only on nodes labeled `katacontainers.io/kata-runtime=true` (which Karpenter applies from the NodePool). It installs the Kata binaries + guest kernel, patches containerd for the `kata-qemu` runtime, creates the `kata-qemu` RuntimeClass, and restarts containerd — then the `kata-kubelet-restart` DaemonSet bounces kubelet to reconnect the CRI.
 
 5. **Workload pods** with `runtimeClassName: kata-qemu` — Karpenter sees a Pending pod with the required taint toleration + nodeSelector, provisions a kata NodePool node, the pod schedules, the QEMU VM boots.
 

@@ -6,8 +6,14 @@ metadata:
   name: kata-nested
 spec:
   amiFamily: AL2023
+  # Stock EKS-optimized AL2023 AMI — Kata binaries/config are installed at
+  # runtime by the kata-deploy DaemonSet, so no custom (Packer-baked) AMI.
   amiSelectorTerms:
-    - id: {{ .Values.kataAmiId | quote }}
+    - alias: al2023@latest
+  # Expose Intel VT-x into the guest so KVM can run nested VMs on 8i instances.
+  # Requires Karpenter >= 1.13.0 (aws/karpenter-provider-aws#9043).
+  cpuOptions:
+    nestedVirtualization: enabled
   role: {{ .Values.nodeRole | quote }}
   subnetSelectorTerms:
     - tags:
@@ -25,19 +31,30 @@ spec:
   metadataOptions:
     httpEndpoint: enabled
     httpTokens: required
+  # MIME-multipart userData: a boot shell script loads the KVM module (creates
+  # /dev/kvm) BEFORE the node goes Ready, then the nodeadm NodeConfig joins the
+  # cluster. cpuOptions above only makes VT-x visible; the guest OS must still
+  # load kvm_intel — the stock AL2023 image does not auto-load it.
+  # Containerd's kata runtime handler + RuntimeClass are configured later by the
+  # kata-deploy DaemonSet (it owns containerd), so no containerd block here.
   userData: |
+    MIME-Version: 1.0
+    Content-Type: multipart/mixed; boundary="//"
+
+    --//
+    Content-Type: text/x-shellscript; charset="us-ascii"
+    #!/bin/bash
+    modprobe kvm_intel
+    printf 'kvm\nkvm_intel\n' > /etc/modules-load.d/kvm.conf
+
+    --//
+    Content-Type: application/node.eks.aws
     apiVersion: node.eks.aws/v1alpha1
     kind: NodeConfig
     spec:
       cluster:
         name: {{ .Values.clusterName }}
-      containerd:
-        config: |
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-qemu]
-          runtime_type = "io.containerd.kata.v2"
-          privileged_without_host_devices = true
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-qemu.options]
-          ConfigPath = "/etc/kata-containers/configuration-qemu.toml"
+    --//--
 ---
 apiVersion: karpenter.sh/v1
 kind: NodePool
@@ -72,6 +89,9 @@ spec:
           operator: In
           values: ["amd64"]
       expireAfter: 720h
+  # Higher weight than kata-metal → Karpenter prefers nested when both can
+  # satisfy a pod; metal is the fallback only when nested capacity is unavailable.
+  weight: 20
   limits:
     cpu: {{ .Values.kataNested.cpuLimit }}
   disruption:
@@ -86,8 +106,10 @@ metadata:
   name: kata-metal
 spec:
   amiFamily: AL2023
+  # Stock AL2023 AMI; kata-deploy installs Kata at runtime. Bare-metal has
+  # native VT-x so no cpuOptions needed, but the KVM module still must be loaded.
   amiSelectorTerms:
-    - id: {{ .Values.kataAmiId | quote }}
+    - alias: al2023@latest
   role: {{ .Values.nodeRole | quote }}
   subnetSelectorTerms:
     - tags:
@@ -106,18 +128,23 @@ spec:
     httpEndpoint: enabled
     httpTokens: required
   userData: |
+    MIME-Version: 1.0
+    Content-Type: multipart/mixed; boundary="//"
+
+    --//
+    Content-Type: text/x-shellscript; charset="us-ascii"
+    #!/bin/bash
+    modprobe kvm_intel
+    printf 'kvm\nkvm_intel\n' > /etc/modules-load.d/kvm.conf
+
+    --//
+    Content-Type: application/node.eks.aws
     apiVersion: node.eks.aws/v1alpha1
     kind: NodeConfig
     spec:
       cluster:
         name: {{ .Values.clusterName }}
-      containerd:
-        config: |
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-qemu]
-          runtime_type = "io.containerd.kata.v2"
-          privileged_without_host_devices = true
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-qemu.options]
-          ConfigPath = "/etc/kata-containers/configuration-qemu.toml"
+    --//--
 ---
 apiVersion: karpenter.sh/v1
 kind: NodePool
@@ -152,7 +179,7 @@ spec:
           operator: In
           values: ["amd64"]
       expireAfter: 720h
-  # Weight is lower than kata-nested → Karpenter prefers nested when both can satisfy a pod
+  # Lower weight than kata-nested → only chosen when nested capacity is unavailable.
   weight: 10
   limits:
     cpu: {{ .Values.kataMetal.cpuLimit }}
