@@ -7,11 +7,12 @@
 #   1. lands early (it tolerates the startup taint, selects the STATIC kata-enabled label)
 #   2. waits until kata-deploy finishes — signalled by the katacontainers.io/kata-runtime
 #      label, which kata-deploy applies only AFTER patching + restarting containerd
-#   3. restarts kubelet so it reconnects the CRI after that containerd restart
-#   4. removes the startup taint, letting kata-qemu workloads bind to a ready node
+#   3. removes the startup taint, letting kata-qemu workloads bind to a ready node
 #
-# This replaces the old unsequenced "kata-kubelet-restart" DaemonSet, which raced
-# kata-deploy with no ordering guarantee.
+# NOTE: we deliberately do NOT restart kubelet here. kubelet's CRI client reconnects
+# to containerd automatically after kata-deploy's restart, so the bounce should be
+# unnecessary. The parked _kata-kubelet-restart.yaml.disabled has the old logic if a
+# real deploy shows kubelet failing to re-probe the kata runtime.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -56,11 +57,12 @@ spec:
         app: kata-readiness
     spec:
       serviceAccountName: kata-readiness
-      hostPID: true
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
+      # No hostPID / hostNetwork / privileged needed — this pod only talks to the
+      # API server (poll label, remove taint). That also lets us use a plain kubectl
+      # image instead of a privileged nsenter-capable one.
+      #
       # Tolerate everything (Exists) so we land on the node *before* the runtime is
-      # ready — this covers both the kata workload taint and the kata.io/runtime-not-ready
+      # ready — covers both the kata workload taint and the kata.io/runtime-not-ready
       # startup taint we are responsible for removing.
       tolerations:
         - operator: Exists
@@ -71,17 +73,11 @@ spec:
         kata-enabled: "true"
       containers:
         - name: kata-readiness
-          # nicolaka/netshoot bundles both kubectl and nsenter (verify on first deploy).
-          image: nicolaka/netshoot
-          securityContext:
-            privileged: true
-          env:
-            - name: NODE_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
+          # Verify this image is pullable in your environment (registry egress).
+          # Alternatives if bitnami is unavailable: rancher/kubectl, alpine/k8s.
+          image: bitnami/kubectl:latest
           command:
-            - sh
+            - /bin/sh
             - -c
             - |
               set -eu
@@ -92,15 +88,16 @@ spec:
                   -o jsonpath='{.metadata.labels.katacontainers\.io/kata-runtime}')" = "true" ]; do
                 sleep 5
               done
-              echo "[kata-readiness] kata-deploy done; restarting kubelet to reconnect CRI..."
-              nsenter -t 1 -m -u -i -n -p -- systemctl restart kubelet
-              echo "[kata-readiness] waiting 30s for kubelet to stabilize..."
-              sleep 30
-              echo "[kata-readiness] removing startup taint kata.io/runtime-not-ready..."
+              echo "[kata-readiness] kata-deploy done; removing startup taint kata.io/runtime-not-ready..."
               kubectl taint node "${NODE_NAME}" kata.io/runtime-not-ready:NoSchedule- || true
               echo "[kata-readiness] node ${NODE_NAME} is ready for kata workloads."
               sleep infinity
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
           resources:
             requests:
               cpu: 1m
-              memory: 8Mi
+              memory: 16Mi
