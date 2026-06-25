@@ -1,4 +1,16 @@
 ---
+# WHY THIS DAEMONSET EXISTS (taint removal):
+# kata-deploy does NOT natively remove a node taint when its install finishes —
+# there is no startup-taint / taint-removal option in the kata-deploy chart
+# values or templates. It only *emits* the katacontainers.io/kata-runtime label
+# as its final install step. Upstream tracks adding native readiness/taint
+# handling here: https://github.com/kata-containers/kata-containers/issues/13283
+#
+# Until that lands, this DaemonSet is the glue: it watches for kata-deploy's
+# post-install label and removes the katacontainers.io/runtime-not-ready startup
+# taint, which is what actually lets kata-qemu workloads bind to the node. If/when
+# kata-deploy gains built-in taint removal, this DaemonSet can be retired.
+
 # kata-readiness — gates kata nodes until the runtime is actually usable.
 #
 # Karpenter brings kata nodes up carrying a startup taint (katacontainers.io/runtime-not-ready).

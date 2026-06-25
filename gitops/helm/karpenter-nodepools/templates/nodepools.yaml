@@ -43,12 +43,14 @@ spec:
 
     --//
     Content-Type: text/x-shellscript; charset="us-ascii"
+
     #!/bin/bash
     modprobe kvm_intel
     printf 'kvm\nkvm_intel\n' > /etc/modules-load.d/kvm.conf
 
     --//
     Content-Type: application/node.eks.aws
+
     apiVersion: node.eks.aws/v1alpha1
     kind: NodeConfig
     spec:
@@ -140,12 +142,14 @@ spec:
 
     --//
     Content-Type: text/x-shellscript; charset="us-ascii"
+
     #!/bin/bash
     modprobe kvm_intel
     printf 'kvm\nkvm_intel\n' > /etc/modules-load.d/kvm.conf
 
     --//
     Content-Type: application/node.eks.aws
+
     apiVersion: node.eks.aws/v1alpha1
     kind: NodeConfig
     spec:
