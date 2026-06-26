@@ -16,6 +16,20 @@ module "eks_blueprints_addons" {
     chart_version = "7.8.0"
   }
 
+  # Self-managed AWS Load Balancer Controller — provisions ALBs/NLBs from
+  # Ingress (class "alb") + Service type LoadBalancer. The module creates the
+  # IRSA role + IAM policy and installs the Helm chart. Backs the "alb"
+  # IngressClass (controller ingress.k8s.aws/alb) used by finance-ui.
+  enable_aws_load_balancer_controller = true
+  aws_load_balancer_controller = {
+    # Chart creates the default "alb" IngressClass (createIngressClassResource
+    # defaults true). finance-ui references ingressClassName: alb.
+    set = [{
+      name  = "vpcId"
+      value = module.vpc.vpc_id
+    }]
+  }
+
   tags = local.tags
 }
 
