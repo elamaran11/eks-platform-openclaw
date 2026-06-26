@@ -17,7 +17,9 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
       nodeSelector:
-        katacontainers.io/kata-runtime: "true"
+        # Bind via kata-enabled (static); NOT katacontainers.io/kata-runtime,
+        # which is kata-deploy's post-install signal gated by the startup taint.
+        kata-enabled: "true"
       tolerations:
         - key: kata
           operator: Equal

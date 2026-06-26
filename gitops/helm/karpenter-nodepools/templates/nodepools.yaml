@@ -66,7 +66,11 @@ spec:
   template:
     metadata:
       labels:
-        katacontainers.io/kata-runtime: "true"
+        # NOTE: katacontainers.io/kata-runtime is intentionally NOT set here.
+        # kata-deploy applies it as its post-install signal; kata-readiness waits
+        # on it to remove the startup taint. Setting it at node birth poisons that
+        # signal (taint removed before the runtime is ready). Bind workloads via
+        # kata-enabled instead.
         node-type: kata-nested
         kata-enabled: "true"
     spec:
@@ -165,7 +169,8 @@ spec:
   template:
     metadata:
       labels:
-        katacontainers.io/kata-runtime: "true"
+        # katacontainers.io/kata-runtime NOT set here — see kata-nested above.
+        # kata-deploy emits it post-install; bind workloads via kata-enabled.
         node-type: kata-metal
         kata-enabled: "true"
     spec:
