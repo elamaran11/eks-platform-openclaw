@@ -1,30 +1,35 @@
 ---
 # WHY THIS DAEMONSET EXISTS (taint removal):
-# kata-deploy does NOT natively remove a node taint when its install finishes —
-# there is no startup-taint / taint-removal option in the kata-deploy chart
-# values or templates. It only *emits* the katacontainers.io/kata-runtime label
-# as its final install step. Upstream tracks adding native readiness/taint
-# handling here: https://github.com/kata-containers/kata-containers/issues/13283
+# kata-deploy does NOT natively remove a node taint when its install finishes.
+# Upstream tracks adding native readiness/taint handling here:
+# https://github.com/kata-containers/kata-containers/issues/13283
 #
-# Until that lands, this DaemonSet is the glue: it watches for kata-deploy's
-# post-install label and removes the katacontainers.io/runtime-not-ready startup
-# taint, which is what actually lets kata-qemu workloads bind to the node. If/when
+# Until that lands, this DaemonSet is the glue: it waits for kata-deploy to
+# finish installing on its node, then removes the katacontainers.io/runtime-not-ready
+# startup taint, which is what actually lets kata-qemu workloads bind. If/when
 # kata-deploy gains built-in taint removal, this DaemonSet can be retired.
-
-# kata-readiness — gates kata nodes until the runtime is actually usable.
 #
-# Karpenter brings kata nodes up carrying a startup taint (katacontainers.io/runtime-not-ready).
-# kubelet will not bind workloads while it is present, but Karpenter ignores it when
-# provisioning, so there is no chicken-and-egg. This DaemonSet:
-#   1. lands early (it tolerates the startup taint, selects the STATIC kata-enabled label)
-#   2. waits until kata-deploy finishes — signalled by the katacontainers.io/kata-runtime
-#      label, which kata-deploy applies only AFTER patching + restarting containerd
-#   3. removes the startup taint, letting kata-qemu workloads bind to a ready node
+# READINESS SIGNAL — why NOT the katacontainers.io/kata-runtime label:
+# That label is now set at node birth by the Karpenter NodePool, because the
+# kata-qemu RuntimeClass carries scheduling.nodeSelector for it and the
+# RuntimeClass admission controller force-merges it into every kata pod — so the
+# label MUST exist at provision time or Karpenter can't schedule (cold-start
+# deadlock). That makes the label useless as a "kata-deploy finished" signal.
+# Instead we watch the kata-deploy pod's Ready condition: its readinessProbe
+# hits /readyz, which the kata-deploy binary returns 503 for during install and
+# flips to 200 ONLY after the install completes on that node (verified in
+# kata-deploy health.rs: HealthState starts Installing, set(Ready) runs strictly
+# after host-check->artifacts->cri->label). Pod Ready == runtime installed here.
+#
+# Flow:
+#   1. land early (tolerate the startup taint, select the STATIC kata-enabled label)
+#   2. wait until the kata-deploy pod ON THIS NODE reports Ready=True
+#   3. remove the startup taint, letting kata-qemu workloads bind
 #
 # NOTE: we deliberately do NOT restart kubelet here. kubelet's CRI client reconnects
-# to containerd automatically after kata-deploy's restart, so the bounce should be
-# unnecessary. The parked _kata-kubelet-restart.yaml.disabled has the old logic if a
-# real deploy shows kubelet failing to re-probe the kata runtime.
+# to containerd automatically after kata-deploy's restart. The parked
+# _kata-kubelet-restart.yaml.disabled has the old logic if a real deploy shows
+# kubelet failing to re-probe the kata runtime.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -36,10 +41,14 @@ kind: ClusterRole
 metadata:
   name: kata-readiness
 rules:
-  # get/list to poll the readiness label; patch to remove the startup taint.
+  # nodes: patch to remove the startup taint (get/list to read current state).
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list", "patch"]
+  # pods: get/list to poll the kata-deploy pod's Ready condition on this node.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -70,17 +79,17 @@ spec:
     spec:
       serviceAccountName: kata-readiness
       # No hostPID / hostNetwork / privileged needed — this pod only talks to the
-      # API server (poll label, remove taint). That also lets us use a plain kubectl
-      # image instead of a privileged nsenter-capable one.
+      # API server (poll the kata-deploy pod, remove the taint). That also lets us
+      # use a plain kubectl image instead of a privileged nsenter-capable one.
       #
       # Tolerate everything (Exists) so we land on the node *before* the runtime is
-      # ready — covers both the kata workload taint and the katacontainers.io/runtime-not-ready
-      # startup taint we are responsible for removing.
+      # ready — covers both the kata workload taint and the
+      # katacontainers.io/runtime-not-ready startup taint we are responsible for removing.
       tolerations:
         - operator: Exists
-      # STATIC label set at NodePool creation — present from boot, so this pod schedules
-      # immediately. (Do NOT use katacontainers.io/kata-runtime: that appears only after
-      # kata-deploy finishes, which would be too late to clear the startup taint.)
+      # STATIC label set at NodePool creation — present from boot, so this pod
+      # schedules immediately. (kata-enabled is on both kata pools; we only need to
+      # land on kata nodes, not distinguish nested vs metal.)
       nodeSelector:
         kata-enabled: "true"
       containers:
@@ -93,14 +102,16 @@ spec:
             - -c
             - |
               set -eu
-              echo "[kata-readiness] node=${NODE_NAME}: waiting for kata-deploy to finish..."
-              # kata-deploy applies this label as its final install step (after the
-              # containerd restart), so its presence means the runtime is configured.
-              until [ "$(kubectl get node "${NODE_NAME}" \
-                  -o jsonpath='{.metadata.labels.katacontainers\.io/kata-runtime}')" = "true" ]; do
+              echo "[kata-readiness] node=${NODE_NAME}: waiting for kata-deploy pod to report Ready..."
+              # The kata-deploy DaemonSet pod on this node (label name=kata-deploy)
+              # goes Ready only when its /readyz returns 200, which happens strictly
+              # after install completes on this node. Poll its Ready condition.
+              until [ "$(kubectl get pods -n kube-system -l name=kata-deploy \
+                  --field-selector "spec.nodeName=${NODE_NAME}" \
+                  -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}')" = "True" ]; do
                 sleep 5
               done
-              echo "[kata-readiness] kata-deploy done; removing startup taint katacontainers.io/runtime-not-ready..."
+              echo "[kata-readiness] kata-deploy Ready; removing startup taint katacontainers.io/runtime-not-ready..."
               kubectl taint node "${NODE_NAME}" katacontainers.io/runtime-not-ready:NoSchedule- || true
               echo "[kata-readiness] node ${NODE_NAME} is ready for kata workloads."
               sleep infinity

@@ -66,11 +66,14 @@ spec:
   template:
     metadata:
       labels:
-        # NOTE: katacontainers.io/kata-runtime is intentionally NOT set here.
-        # kata-deploy applies it as its post-install signal; kata-readiness waits
-        # on it to remove the startup taint. Setting it at node birth poisons that
-        # signal (taint removed before the runtime is ready). Bind workloads via
-        # kata-enabled instead.
+        # katacontainers.io/kata-runtime MUST be set at node birth: kata-deploy's
+        # kata-qemu/kata-clh RuntimeClass carries scheduling.nodeSelector for this
+        # label, which the RuntimeClass admission controller force-merges into every
+        # kata pod. Karpenter can only provision a node for those pods if the pool
+        # advertises the label — without it, cold start deadlocks ("label does not
+        # have known values"). Readiness is NOT gated on this label anymore;
+        # kata-readiness watches the kata-deploy pod's /readyz instead.
+        katacontainers.io/kata-runtime: "true"
         node-type: kata-nested
         kata-enabled: "true"
     spec:
@@ -169,8 +172,9 @@ spec:
   template:
     metadata:
       labels:
-        # katacontainers.io/kata-runtime NOT set here — see kata-nested above.
-        # kata-deploy emits it post-install; bind workloads via kata-enabled.
+        # katacontainers.io/kata-runtime set at boot — see kata-nested above
+        # (RuntimeClass scheduling.nodeSelector requires it for provisioning).
+        katacontainers.io/kata-runtime: "true"
         node-type: kata-metal
         kata-enabled: "true"
     spec:
