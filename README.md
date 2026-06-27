@@ -214,7 +214,7 @@ gitops/
 
   helm/
     karpenter-nodepools/  # kata-nested + kata-metal NodePools, EC2NodeClass
-    kata-deploy/          # kata-deploy DaemonSet + kubelet-restart DaemonSet
+    kata-deploy/          # kata-deploy DaemonSet + kata-readiness startup-taint gate
     litellm/              # LiteLLM proxy with sitecustomize.py Bedrock patch
     openclaw/             # OpenClaw Sandbox CRD + related manifests
 
@@ -240,7 +240,7 @@ Since we run Karpenter ourselves (not EKS Auto Mode's built-in), getting kata no
 
 3. **Karpenter NodePools + EC2NodeClass** (ArgoCD wave 0) — `kata-nested` and `kata-metal` NodePools use the `al2023@latest` AMI alias. The `kata-nested` EC2NodeClass sets `cpuOptions.nestedVirtualization=enabled`; both run `modprobe kvm_intel` in `userData` so `/dev/kvm` exists before kata-deploy lands. Subnet + SG discovery via `karpenter.sh/discovery=<cluster-name>` tag.
 
-4. **kata-deploy DaemonSet** (ArgoCD wave 1) — runs only on nodes labeled `katacontainers.io/kata-runtime=true` (which Karpenter applies from the NodePool). It installs the Kata binaries + guest kernel, patches containerd for the `kata-qemu` runtime, creates the `kata-qemu` RuntimeClass, and restarts containerd — then the `kata-kubelet-restart` DaemonSet bounces kubelet to reconnect the CRI.
+4. **kata-deploy DaemonSet** (ArgoCD wave 1) — runs only on nodes labeled `katacontainers.io/kata-runtime=true` (which Karpenter applies from the NodePool). It installs the Kata binaries + guest kernel, patches containerd for the `kata-qemu` runtime, creates the `kata-qemu` RuntimeClass, and restarts containerd. A companion `kata-readiness` DaemonSet watches the kata-deploy pod's `/readyz` and removes the `katacontainers.io/runtime-not-ready` startup taint once install completes, so no kata workload binds before the runtime is ready. (kubelet's CRI client reconnects to containerd on its own; the old `kata-kubelet-restart` DaemonSet is parked in `_kata-kubelet-restart.yaml.disabled` if a deploy ever needs it.)
 
 5. **Workload pods** with `runtimeClassName: kata-qemu` — Karpenter sees a Pending pod with the required taint toleration + nodeSelector, provisions a kata NodePool node, the pod schedules, the QEMU VM boots.
 

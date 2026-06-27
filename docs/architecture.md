@@ -16,7 +16,7 @@
 |---|---|---|
 | -1 | karpenter, agent-sandbox | Prereqs: Karpenter controller (upstream Helm chart) + Sandbox CRDs |
 | 0 | karpenter-nodepools, kata StorageClass | NodePools (kata-nested, kata-metal) + EC2NodeClass, kata-aware storage class |
-| 1 | kata-deploy, monitoring | kata-qemu runtime install + kubelet-restart DS, Prometheus/Grafana |
+| 1 | kata-deploy, monitoring | kata-qemu runtime install + kata-readiness startup-taint gate, Prometheus/Grafana |
 | 2 | litellm | OpenAI-compat proxy to Bedrock with Guardrails + sitecustomize |
 | 3 | openclaw, external-dns, ingressclass-alb | Operator (if any), DNS, ALB IngressClass |
 | 4 | finance-assistant, slack | Sandbox CRs + NetworkPolicies + ConfigMaps + session-router |
