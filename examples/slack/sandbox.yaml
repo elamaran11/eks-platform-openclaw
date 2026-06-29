@@ -9,7 +9,10 @@ spec:
       labels:
         sandbox: openclaw-slack-sandbox
     spec:
-      runtimeClassName: kata-qemu
+      # Firecracker VMM (kata-fc) instead of the default kata-qemu. Boots on the
+      # kata-fc nodepool (devmapper snapshotter). The other examples + the
+      # openclaw default remain on kata-qemu.
+      runtimeClassName: kata-fc
       serviceAccountName: openclaw-sandbox
       automountServiceAccountToken: true
       securityContext:
@@ -17,11 +20,12 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
       nodeSelector:
-        # Pin to the kata-NESTED pool (node-type unique to it); NOT kata-enabled
-        # (both pools) nor katacontainers.io/kata-runtime (gated readiness signal).
-        node-type: kata-nested
+        # Pin to the kata-FC pool (node-type unique to it). The kata-fc RuntimeClass
+        # admission controller force-merges katacontainers.io/kata-runtime-fc onto the
+        # pod, so we don't repeat it here — node-type is the unambiguous pool selector.
+        node-type: kata-fc
       tolerations:
-        - key: kata
+        - key: kata-fc
           operator: Equal
           value: "true"
           effect: NoSchedule

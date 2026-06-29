@@ -1,0 +1,58 @@
+kata-deploy:
+  image:
+    reference: quay.io/kata-containers/kata-deploy
+    tag: "3.32.0"
+
+  # SECOND kata-deploy release, isolated from the qemu/clh one by a name suffix.
+  # kata-deploy installs EVERY enabled shim on EVERY node it lands on, so the only
+  # safe way to add Firecracker without touching the qemu nested/metal nodes is a
+  # separate release that (a) only enables the fc shim and (b) only selects fc nodes.
+  env:
+    # Suffix every cluster/namespace-scoped object (DaemonSet, SA, ClusterRole/Binding,
+    # RuntimeClasses) so this release does not collide with the kata-deploy release.
+    # The chart also disables its own default RuntimeClass when a suffix is set.
+    #
+    # VALIDATION CHECKPOINT #1: the suffix is expected to also rename the containerd
+    # runtime handler kata-deploy registers (kata-fc -> kata-fc-fc). Our hand-written
+    # RuntimeClass (gitops/helm/kata/templates/runtimeclass-fc.yaml) sets handler: kata-fc.
+    # On a live fc node, confirm the handler name kata-deploy actually wires into
+    # containerd (`grep kata-fc /etc/containerd/...` or `crictl info`) and align the
+    # RuntimeClass handler to match. The RuntimeClass *name* stays kata-fc either way,
+    # so workloads (runtimeClassName: kata-fc) are unaffected.
+    multiInstallSuffix: "fc"
+
+  # Land ONLY on the kata-fc nodepool. kata-fc-enabled is a STATIC label set at node
+  # birth by the NodePool template (present from boot) — do NOT select on
+  # katacontainers.io/kata-runtime-fc, which kata-deploy emits only AFTER install
+  # (selecting on it would deadlock: never schedules -> never installs -> never labels).
+  nodeSelector:
+    kata-fc-enabled: "true"
+
+  tolerations:
+    # Workload taint — only kata-fc pods run on these nodes.
+    - key: kata-fc
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+    # Startup taint — kata-deploy-fc must run DESPITE it; the kata-fc readiness
+    # DaemonSet removes it once this install reports Ready.
+    - key: katacontainers.io/runtime-not-ready
+      operator: Exists
+      effect: NoSchedule
+
+  # Only Firecracker. disableAll turns every shim off, then we re-enable fc alone —
+  # so this release never installs qemu/clh and never touches the qemu nodes.
+  # The fc shim ships snapshotter: "devmapper" by default; kata-deploy emits
+  # SNAPSHOTTER_HANDLER_MAPPING=kata-fc:devmapper and wires the kata-fc runtime into
+  # containerd against the devmapper thin-pool the EC2NodeClass userData pre-creates.
+  shims:
+    disableAll: true
+    fc:
+      enabled: true
+
+  # We define the kata-fc RuntimeClass ourselves (gitops/helm/kata) because we need
+  # scheduling.nodeSelector + tolerations to steer pods onto the fc pool — the chart's
+  # generated RuntimeClass only carries katacontainers.io/kata-runtime. Disable the
+  # chart's so there is exactly one kata-fc RuntimeClass and no name fight.
+  runtimeClasses:
+    enabled: false

@@ -1,0 +1,100 @@
+---
+# kata-fc readiness gate — the Firecracker analogue of kata-deploy's kata-readiness
+# DaemonSet (gitops/helm/kata-deploy/templates/kata-readiness.yaml). Same rationale:
+# kata-deploy does NOT natively remove a node taint when its install finishes
+# (kata-containers/kata-containers#13283), so this DaemonSet waits for the
+# kata-deploy-fc pod on its node to report Ready (its /readyz flips 503 -> 200 only
+# after fc install completes) and then removes the katacontainers.io/runtime-not-ready
+# startup taint, letting kata-fc workloads bind.
+#
+# SCOPING — why this does not fight the qemu kata-readiness:
+#   - It selects kata-fc-enabled nodes; the qemu kata-readiness selects kata-enabled.
+#     The fc pool carries only kata-fc-enabled, the qemu pools only kata-enabled, so
+#     each readiness DaemonSet lands on exactly its own pool's nodes.
+#   - All RBAC objects are suffixed -fc to avoid colliding with kata-readiness.
+#   - Both pools share the SAME startup taint key (katacontainers.io/runtime-not-ready);
+#     that is fine because only the matching readiness DaemonSet is present on a node.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kata-readiness-fc
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kata-readiness-fc
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kata-readiness-fc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kata-readiness-fc
+subjects:
+  - kind: ServiceAccount
+    name: kata-readiness-fc
+    namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kata-readiness-fc
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: kata-readiness-fc
+  template:
+    metadata:
+      labels:
+        app: kata-readiness-fc
+    spec:
+      serviceAccountName: kata-readiness-fc
+      # Tolerate everything so we land before the runtime is ready — covers both the
+      # kata-fc workload taint and the runtime-not-ready startup taint we remove.
+      tolerations:
+        - operator: Exists
+      # STATIC label present from boot (the post-install katacontainers.io/kata-runtime-fc
+      # label is NOT usable as a readiness signal — it gates scheduling, see the NodePool).
+      nodeSelector:
+        kata-fc-enabled: "true"
+      containers:
+        - name: kata-readiness-fc
+          image: bitnami/kubectl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              echo "[kata-readiness-fc] node=${NODE_NAME}: waiting for kata-deploy-fc pod to report Ready..."
+              # The kata-deploy-fc DaemonSet pod on this node. multiInstallSuffix=fc renames
+              # the pod label to name=kata-deploy-fc. It goes Ready only when its /readyz
+              # returns 200, which happens strictly after the fc install completes here.
+              until [ "$(kubectl get pods -n kube-system -l name=kata-deploy-fc \
+                  --field-selector "spec.nodeName=${NODE_NAME}" \
+                  -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}')" = "True" ]; do
+                sleep 5
+              done
+              echo "[kata-readiness-fc] kata-deploy-fc Ready; removing startup taint katacontainers.io/runtime-not-ready..."
+              kubectl taint node "${NODE_NAME}" katacontainers.io/runtime-not-ready:NoSchedule- || true
+              echo "[kata-readiness-fc] node ${NODE_NAME} is ready for kata-fc workloads."
+              sleep infinity
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests:
+              cpu: 1m
+              memory: 16Mi

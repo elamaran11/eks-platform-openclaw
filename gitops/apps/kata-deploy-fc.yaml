@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kata-deploy-fc
+  namespace: argocd
+  annotations:
+    # Same wave as kata-deploy: the fc runtime install happens alongside the qemu
+    # install, before workloads (wave 4+) land.
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/elamaran11/eks-platform-openclaw
+    targetRevision: main
+    path: gitops/helm/kata-deploy-fc
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  # multiInstallSuffix=fc renames these objects with a -fc suffix; ignore the
+  # post-install drift kata-deploy applies to them (same pattern as kata-deploy).
+  ignoreDifferences:
+    - group: ""
+      kind: ServiceAccount
+      name: kata-deploy-sa-fc
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: kata-deploy-role-fc
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+      name: kata-deploy-rb-fc
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true

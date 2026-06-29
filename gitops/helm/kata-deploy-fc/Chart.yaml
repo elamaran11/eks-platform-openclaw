@@ -1,0 +1,9 @@
+apiVersion: v2
+name: kata-deploy-fc
+description: Kata Containers Firecracker (kata-fc) installer — second kata-deploy release scoped to the kata-fc nodepool
+type: application
+version: 0.1.0
+dependencies:
+  - name: kata-deploy
+    version: "3.32.0"
+    repository: oci://ghcr.io/kata-containers/kata-deploy-charts
