@@ -12,13 +12,14 @@ kata-deploy:
     # RuntimeClasses) so this release does not collide with the kata-deploy release.
     # The chart also disables its own default RuntimeClass when a suffix is set.
     #
-    # VALIDATION CHECKPOINT #1: the suffix is expected to also rename the containerd
-    # runtime handler kata-deploy registers (kata-fc -> kata-fc-fc). Our hand-written
-    # RuntimeClass (gitops/helm/kata/templates/runtimeclass-fc.yaml) sets handler: kata-fc.
-    # On a live fc node, confirm the handler name kata-deploy actually wires into
-    # containerd (`grep kata-fc /etc/containerd/...` or `crictl info`) and align the
-    # RuntimeClass handler to match. The RuntimeClass *name* stays kata-fc either way,
-    # so workloads (runtimeClassName: kata-fc) are unaffected.
+    # IMPORTANT — handler naming: the suffix ALSO renames the containerd runtime
+    # handler kata-deploy registers, to kata-<shim>-<suffix> = kata-fc-fc. This is
+    # confirmed from the chart's own runtimeclasses.yaml template
+    # (`handler: kata-{{ .shim }}-{{ .multiInstallSuffix }}`), which must match what
+    # the install script writes into containerd. Our hand-written RuntimeClass
+    # (gitops/helm/kata/templates/runtimeclass-fc.yaml) is set to handler: kata-fc-fc
+    # to match. The RuntimeClass *name* stays kata-fc, so workloads
+    # (runtimeClassName: kata-fc) are unaffected by the suffix.
     multiInstallSuffix: "fc"
 
   # Land ONLY on the kata-fc nodepool. kata-fc-enabled is a STATIC label set at node

@@ -1,14 +1,22 @@
 # Dedicated kata-fc (Firecracker) RuntimeClass, owned here — symmetric with
 # runtimeclass-qemu.yaml / runtimeclass-clh.yaml. kata-deploy runs with
 # runtimeClasses.enabled=false, so the kata chart is the single source of truth.
-# handler "kata-fc" matches the containerd runtime the kata-deploy-fc release
-# registers when it installs the fc shim. scheduling steers pods onto the kata-fc
-# nodepool (label + taint) so workloads only set runtimeClassName.
+#
+# name vs handler: workloads set runtimeClassName: kata-fc (the metadata.name).
+# The handler MUST be kata-fc-fc, NOT kata-fc — the kata-deploy-fc release runs
+# with env.multiInstallSuffix=fc, and the chart suffixes the containerd runtime
+# handler it registers to kata-<shim>-<suffix> = kata-fc-fc (see the chart's
+# runtimeclasses.yaml: `handler: kata-{{ .shim }}-{{ .multiInstallSuffix }}`).
+# A bare `kata-fc` handler would point at a containerd runtime that does not
+# exist and every kata-fc pod would fail to start.
+#
+# scheduling steers pods onto the kata-fc nodepool (label + taint) so workloads
+# only set runtimeClassName.
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata:
   name: kata-fc
-handler: kata-fc
+handler: kata-fc-fc
 scheduling:
   nodeSelector:
     katacontainers.io/kata-runtime-fc: "true"
