@@ -387,3 +387,142 @@ spec:
     consolidationPolicy: WhenEmptyOrUnderutilized
     consolidateAfter: {{ .Values.kataFc.consolidateAfter }}
 {{- end }}
+{{- if .Values.kataFcMetal.enabled }}
+---
+# =============================================================================
+# kata-fc-metal: Firecracker VMM on BARE-METAL (fallback for the nested kata-fc
+# pool, mirrors kata-metal's relationship to kata-nested). Same no-bake model:
+# stock al2023@latest, fc runtime installed by the kata-deploy-fc release.
+#
+# Bare metal exposes native VT-x, so NO cpuOptions.nestedVirtualization — but the
+# KVM module still must be loaded, and Firecracker still needs the devmapper
+# thin-pool + containerd snapshotter plugin (kata-deploy can't create those).
+# This node carries the SAME kata-fc-enabled label + kata-fc taint as the nested
+# fc pool, so the existing kata-deploy-fc release and kata-readiness-fc DaemonSet
+# install/gate it with no extra wiring.
+# =============================================================================
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: kata-fc-metal
+spec:
+  amiFamily: AL2023
+  amiSelectorTerms:
+    - alias: al2023@latest
+  role: {{ .Values.nodeRole | quote }}
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: {{ .Values.clusterName | quote }}
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: {{ .Values.clusterName | quote }}
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 250Gi
+        volumeType: gp3
+        deleteOnTermination: true
+        encrypted: true
+  metadataOptions:
+    httpEndpoint: enabled
+    httpTokens: required
+  # Same host-prep as the nested kata-fc pool, minus cpuOptions (bare metal has
+  # native VT-x): load KVM, build the devmapper thin-pool, wire the containerd
+  # devmapper snapshotter. The kata-fc runtime handler is added by kata-deploy-fc.
+  userData: |
+    MIME-Version: 1.0
+    Content-Type: multipart/mixed; boundary="//"
+
+    --//
+    Content-Type: text/x-shellscript; charset="us-ascii"
+
+    #!/bin/bash
+    set -euxo pipefail
+    exec >/var/log/kata-fc-userdata.log 2>&1
+
+    modprobe kvm_intel
+    printf 'kvm\nkvm_intel\n' > /etc/modules-load.d/kvm.conf
+
+    modprobe dm_thin_pool
+    printf 'dm_thin_pool\n' > /etc/modules-load.d/devmapper.conf
+    dnf install -y device-mapper-persistent-data || true
+
+    DATA_DIR=/var/lib/containerd/devmapper
+    mkdir -p "${DATA_DIR}"
+    DATA_FILE="${DATA_DIR}/data"; META_FILE="${DATA_DIR}/meta"
+    if ! dmsetup info devpool >/dev/null 2>&1; then
+      [ -f "${DATA_FILE}" ] || { touch "${DATA_FILE}" && truncate -s 100G "${DATA_FILE}"; }
+      [ -f "${META_FILE}" ] || { touch "${META_FILE}" && truncate -s 10G  "${META_FILE}"; }
+      DATA_DEV=$(losetup --find --show "${DATA_FILE}")
+      META_DEV=$(losetup --find --show "${META_FILE}")
+      LENGTH_SECTORS=$(( $(blockdev --getsize64 -q "${DATA_DEV}") / 512 ))
+      dmsetup create devpool \
+        --table "0 ${LENGTH_SECTORS} thin-pool ${META_DEV} ${DATA_DEV} 128 32768"
+    fi
+
+    --//
+    Content-Type: application/node.eks.aws
+
+    apiVersion: node.eks.aws/v1alpha1
+    kind: NodeConfig
+    spec:
+      cluster:
+        name: {{ .Values.clusterName }}
+      containerd:
+        config: |
+          [plugins."io.containerd.grpc.v1.cri".containerd]
+            discard_unpacked_layers = false
+          [plugins."io.containerd.snapshotter.v1.devmapper"]
+            pool_name = "devpool"
+            root_path = "/var/lib/containerd/devmapper"
+            base_image_size = "10GB"
+            discard_blocks = true
+    --//--
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: kata-fc-metal
+spec:
+  template:
+    metadata:
+      labels:
+        # Same fc label/selector set as the nested kata-fc pool so kata-deploy-fc
+        # and kata-readiness-fc (both select kata-fc-enabled) cover this node too.
+        katacontainers.io/kata-runtime-fc: "true"
+        node-type: kata-fc-metal
+        kata-fc-enabled: "true"
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: kata-fc-metal
+      taints:
+        - key: kata-fc
+          value: "true"
+          effect: NoSchedule
+      startupTaints:
+        - key: katacontainers.io/runtime-not-ready
+          effect: NoSchedule
+      requirements:
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values:
+{{ toYaml .Values.kataFcMetal.instanceTypes | indent 12 }}
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values:
+{{ toYaml .Values.kataFcMetal.capacityTypes | indent 12 }}
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+      expireAfter: 720h
+  # Lower weight than the nested kata-fc pool → only chosen when nested fc
+  # capacity is unavailable (mirrors kata-metal vs kata-nested).
+  weight: 10
+  limits:
+    cpu: {{ .Values.kataFcMetal.cpuLimit }}
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: {{ .Values.kataFcMetal.consolidateAfter }}
+{{- end }}

@@ -41,3 +41,16 @@ kataFc:
   capacityTypes: ["spot", "on-demand"]
   cpuLimit: 500
   consolidateAfter: 5m
+
+# Firecracker bare-metal pool (fallback for kataFc, mirrors kataMetal). Same fc
+# label/taint so the kata-deploy-fc release + kata-readiness-fc cover it. Explicit
+# .metal types (span families/generations a single family filter can't express).
+kataFcMetal:
+  enabled: true
+  instanceTypes:
+    - c5.metal
+    - i3.metal
+    - m5.metal
+  capacityTypes: ["on-demand"] # spot has been unreliable for metal
+  cpuLimit: 200
+  consolidateAfter: 10m
