@@ -51,6 +51,12 @@ kata-deploy:
     fc:
       enabled: true
 
+  # The chart's DEFAULT_SHIM defaults to qemu, but this release only enables the
+  # fc shim — kata-deploy's install script aborts if DEFAULT_SHIM is not among the
+  # enabled SHIMS ("DEFAULT_SHIM 'qemu' must be one of [fc]"). Point it at fc.
+  defaultShim:
+    amd64: fc
+
   # We define the kata-fc RuntimeClass ourselves (gitops/helm/kata) because we need
   # scheduling.nodeSelector + tolerations to steer pods onto the fc pool — the chart's
   # generated RuntimeClass only carries katacontainers.io/kata-runtime. Disable the
