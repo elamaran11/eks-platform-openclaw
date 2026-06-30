@@ -1,7 +1,7 @@
 region           = "us-west-2"
 bedrock_region   = "us-west-2"
 project_name     = "openclaw"
-cluster_version  = "1.32"
+cluster_version  = "1.36"
 
 # ---- Required (no defaults) ----
 

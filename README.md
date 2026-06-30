@@ -177,7 +177,7 @@ Claw-bot connects to Slack via Socket Mode — no public endpoint or ingress req
 |---|---|---|
 | `region` | `us-west-2` | AWS region |
 | `project_name` | `openclaw` | Resource name prefix |
-| `cluster_version` | `1.32` | Kubernetes version |
+| `cluster_version` | `1.36` | Kubernetes version |
 | `gitops_repo_url` | — | Git repo ArgoCD watches |
 | `gitops_target_revision` | `main` | Git branch/tag ArgoCD tracks |
 | `bedrock_region` | `us-west-2` | Bedrock inference region |

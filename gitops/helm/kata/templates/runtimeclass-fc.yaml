@@ -1,7 +1,9 @@
-# Firecracker RuntimeClass, defined here (not by kata-deploy, which only enables
-# the qemu + clh shims). The handler "kata-fc" matches the containerd runtime
-# registered in the kata-fc EC2NodeClass userData. scheduling steers pods onto
-# the kata-fc nodepool (label + taint) so workloads only set runtimeClassName.
+# Dedicated kata-fc (Firecracker) RuntimeClass, owned here — symmetric with
+# runtimeclass-qemu.yaml / runtimeclass-clh.yaml. kata-deploy runs with
+# runtimeClasses.enabled=false, so the kata chart is the single source of truth.
+# handler "kata-fc" matches the containerd runtime the kata-deploy-fc release
+# registers when it installs the fc shim. scheduling steers pods onto the kata-fc
+# nodepool (label + taint) so workloads only set runtimeClassName.
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata:

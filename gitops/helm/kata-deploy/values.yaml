@@ -25,3 +25,10 @@ kata-deploy:
       enabled: true
     clh:
       enabled: true
+  # RuntimeClasses are owned by the kata chart (gitops/helm/kata/templates/
+  # runtimeclass-{qemu,clh,fc}.yaml) so all VMMs are declared the same way and carry
+  # our pool-steering scheduling block. Disable the chart's auto-generated ones to
+  # avoid two RuntimeClasses fighting over the same names. kata-deploy still installs
+  # the qemu + clh shims and registers their containerd runtime handlers.
+  runtimeClasses:
+    enabled: false

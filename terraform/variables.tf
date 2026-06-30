@@ -19,7 +19,9 @@ variable "project_name" {
 variable "cluster_version" {
   description = "Kubernetes version for the EKS cluster"
   type        = string
-  default     = "1.32"
+  # 1.36 pairs with Karpenter >= 1.13's EC2NodeClass cpuOptions.nestedVirtualization
+  # (kata-nested / kata-fc pools); only the 8i-gen AMIs expose nested KVM.
+  default = "1.36"
 }
 
 variable "vpc_cidr" {

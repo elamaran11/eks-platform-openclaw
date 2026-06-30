@@ -2,7 +2,7 @@
 
 ## Cluster layout
 
-- **1 EKS cluster** (`openclaw-eks`, Kubernetes 1.32) in a 3-AZ VPC (`10.0.0.0/16`).
+- **1 EKS cluster** (`openclaw-eks`, Kubernetes 1.36) in a 3-AZ VPC (`10.0.0.0/16`).
 - **Managed system nodegroup** — 2× m5.large. Runs ArgoCD, Karpenter, CoreDNS, EFS CSI, kube-proxy, VPC CNI, Pod Identity agent, monitoring, LiteLLM, session-router, finance-ui.
 - **Karpenter** provisions workload nodes on demand. Two NodePools:
   - `kata-nested` — c8i/m8i nested-virt, spot + on-demand (default; cheaper)

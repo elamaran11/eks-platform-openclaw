@@ -1,0 +1,18 @@
+# Dedicated kata-clh (Cloud Hypervisor) RuntimeClass. kata-deploy installs the clh
+# shim alongside qemu (shims.clh.enabled), so its RuntimeClass must exist too — once
+# kata-deploy runs with runtimeClasses.enabled=false, the chart no longer emits it,
+# so we own it here. clh runs on the same kata-qemu pools (nested + metal): same
+# kata-enabled nodes, same kata taint. Workloads opt in with runtimeClassName: kata-clh.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: kata-clh
+handler: kata-clh
+scheduling:
+  nodeSelector:
+    katacontainers.io/kata-runtime: "true"
+  tolerations:
+    - key: kata
+      value: "true"
+      operator: Equal
+      effect: NoSchedule
