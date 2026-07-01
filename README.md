@@ -248,39 +248,45 @@ Since we run Karpenter ourselves (not EKS Auto Mode's built-in), getting kata no
 
 ## VMM startup benchmark
 
-Cold-start timings for a minimal sandbox workload across all three VMMs on both
-nested-virt (`c8i.2xlarge`) and bare-metal (`c5.metal`) nodes. **Node Boot** is
-the Karpenter `NodeClaim` created → `Ready` interval (EC2 boot + `kata-deploy`
-runtime install + startup-taint removal); **Workload Bootup** is the pod
-`scheduled → Ready` interval (the VM boot itself + image unpack); **Total** is
-the end-to-end cold start for the first pod on a fresh node.
+Startup timings for a minimal sandbox workload across all three VMMs on both
+nested-virt (`c8i.2xlarge`) and bare-metal (`c5.metal`) nodes. Each combination
+is measured two ways to separate node-provisioning cost from VM-boot cost:
 
-| VMM | Instance | Node Boot | Workload Bootup | Total |
-|---|---|---|---|---|
-| kata-qemu | nested (`c8i.2xlarge`) | 98s | 4s | **102s** |
-| kata-clh  | nested (`c8i.2xlarge`) | 98s | 3s | **101s** |
-| kata-fc   | nested (`c8i.2xlarge`) | 94s | 3s | **97s**  |
-| kata-qemu | metal (`c5.metal`)     | 165s | 3s | **168s** |
-| kata-clh  | metal (`c5.metal`)     | 165s | 3s | **168s** |
-| kata-fc   | metal (`c5.metal`)     | 140s | 2s | **142s** |
+- **Cold node + 1st pod** — an empty NodePool provisions a fresh node, then the
+  first sandbox lands on it. `Node Boot` = Karpenter `NodeClaim` created →
+  `Ready` (EC2 boot + `kata-deploy` runtime install + startup-taint removal);
+  `1st Pod` = pod `scheduled → Ready` (VM boot + first, uncached image pull).
+- **Existing node + 2nd pod** — a second sandbox onto the now-warm node.
+  `2nd Pod` = pod `scheduled → Ready`, i.e. pure VM boot with the image cached.
+
+| VMM | Instance | Node Boot (cold) | 1st Pod (cold) | Cold Total | 2nd Pod (warm) |
+|---|---|---|---|---|---|
+| kata-qemu | nested (`c8i.2xlarge`) | 100s | 4s | **104s** | 2s |
+| kata-clh  | nested (`c8i.2xlarge`) | 94s  | 5s | **99s**  | 1s |
+| kata-fc   | nested (`c8i.2xlarge`) | 127s | 3s | **130s** | 2s |
+| kata-qemu | metal (`c5.metal`)     | 121s | 8s | **129s** | 2s |
+| kata-clh  | metal (`c5.metal`)     | 126s | 11s | **137s** | 2s |
+| kata-fc   | metal (`c5.metal`)     | 148s | 2s | **150s** | 2s |
 
 Notes:
-- Single-run measurements from Kubernetes object timestamps; node boot carries
-  natural variance from EC2 provisioning and per-node `kata-deploy` install time.
-  qemu and clh share the same NodePool (`kata-nested` / `kata-metal`), so their
-  Node Boot is measured on the same node instance.
-- **Workload bootup is 2-4s for every VMM** — once the runtime is installed, the
-  VM (QEMU / Cloud Hypervisor / Firecracker) boots in a few seconds regardless.
-  The dominant cold-start cost is Node Boot, and bare metal is ~50-70s slower to
-  provision than nested-virt `8i`.
+- Single-run measurements from Kubernetes object timestamps. Each combination
+  used its own freshly-provisioned node (the shared `kata-nested`/`kata-metal`
+  pools were scaled to zero between qemu and clh runs), so every "cold node"
+  figure is independent — the spread reflects natural EC2 + `kata-deploy`
+  install variance, not the VMM.
+- **The VMM barely matters for startup.** Warm VM boot is 1-2s for all three;
+  the cold 1st-pod adds only a few seconds of uncached image pull on top. The
+  dominant cost is **Node Boot**, and bare metal provisions ~30-50s slower than
+  nested-virt `8i`.
 - VM isolation verified: a kata-fc sandbox reported guest kernel `6.18.35` versus
   the AL2023 host's `6.18.33` — a distinct kernel, i.e. a real VM boundary.
 - **kata-fc caveat:** Firecracker required an on-node config reconciliation to run
-  under `kata-deploy` with `multiInstallSuffix` — kata-deploy's `config.d`
-  drop-in injects an `initrd=` alongside the stock image-based config, which
-  Firecracker rejects ("Image and initrd path cannot be both set"). Validated by
-  keeping the image-based config and dropping the injected `initrd=`; folding this
-  into the `kata-deploy-fc` chart is tracked follow-up work.
+  under `kata-deploy` with `multiInstallSuffix`. kata-deploy's `config.d` drop-in
+  injects an `initrd=` alongside the stock image-based config, which Firecracker
+  rejects ("Image and initrd path cannot be both set"); the install paths also
+  need `/opt/kata` → `/opt/kata-fc` under the suffix. Validated by keeping the
+  image-based config and dropping the injected `initrd=`. Folding this into the
+  `kata-deploy-fc` chart is tracked follow-up work.
 
 ## Teardown
 
