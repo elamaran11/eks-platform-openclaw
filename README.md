@@ -246,6 +246,42 @@ Since we run Karpenter ourselves (not EKS Auto Mode's built-in), getting kata no
 
 ---
 
+## VMM startup benchmark
+
+Cold-start timings for a minimal sandbox workload across all three VMMs on both
+nested-virt (`c8i.2xlarge`) and bare-metal (`c5.metal`) nodes. **Node Boot** is
+the Karpenter `NodeClaim` created → `Ready` interval (EC2 boot + `kata-deploy`
+runtime install + startup-taint removal); **Workload Bootup** is the pod
+`scheduled → Ready` interval (the VM boot itself + image unpack); **Total** is
+the end-to-end cold start for the first pod on a fresh node.
+
+| VMM | Instance | Node Boot | Workload Bootup | Total |
+|---|---|---|---|---|
+| kata-qemu | nested (`c8i.2xlarge`) | 98s | 4s | **102s** |
+| kata-clh  | nested (`c8i.2xlarge`) | 98s | 3s | **101s** |
+| kata-fc   | nested (`c8i.2xlarge`) | 94s | 3s | **97s**  |
+| kata-qemu | metal (`c5.metal`)     | 165s | 3s | **168s** |
+| kata-clh  | metal (`c5.metal`)     | 165s | 3s | **168s** |
+| kata-fc   | metal (`c5.metal`)     | 140s | 2s | **142s** |
+
+Notes:
+- Single-run measurements from Kubernetes object timestamps; node boot carries
+  natural variance from EC2 provisioning and per-node `kata-deploy` install time.
+  qemu and clh share the same NodePool (`kata-nested` / `kata-metal`), so their
+  Node Boot is measured on the same node instance.
+- **Workload bootup is 2-4s for every VMM** — once the runtime is installed, the
+  VM (QEMU / Cloud Hypervisor / Firecracker) boots in a few seconds regardless.
+  The dominant cold-start cost is Node Boot, and bare metal is ~50-70s slower to
+  provision than nested-virt `8i`.
+- VM isolation verified: a kata-fc sandbox reported guest kernel `6.18.35` versus
+  the AL2023 host's `6.18.33` — a distinct kernel, i.e. a real VM boundary.
+- **kata-fc caveat:** Firecracker required an on-node config reconciliation to run
+  under `kata-deploy` with `multiInstallSuffix` — kata-deploy's `config.d`
+  drop-in injects an `initrd=` alongside the stock image-based config, which
+  Firecracker rejects ("Image and initrd path cannot be both set"). Validated by
+  keeping the image-based config and dropping the injected `initrd=`; folding this
+  into the `kata-deploy-fc` chart is tracked follow-up work.
+
 ## Teardown
 
 ```bash
