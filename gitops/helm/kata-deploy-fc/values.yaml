@@ -50,6 +50,24 @@ kata-deploy:
     disableAll: true
     fc:
       enabled: true
+      # WORKAROUND for a kata-deploy multiInstallSuffix bug. When multiInstallSuffix
+      # is set, kata-deploy generates a config.d drop-in (10-installation-prefix.toml)
+      # that emits BOTH `image =` and `initrd =` under [hypervisor.firecracker]. The
+      # kata runtime rejects that ("Image and initrd path cannot be both set"), so no
+      # kata-fc sandbox can start. Firecracker's stock config is image-based, so we
+      # blank the injected initrd here. This dropIn is written as 50-user-overrides.toml
+      # and, being lexically after 10-*, wins the config.d merge.
+      #
+      # Confirmed against kata-containers v3.32.0 source (no live cluster needed):
+      #   - hypervisor_config_linux.go: the check is `ImagePath != "" && InitrdPath != ""`,
+      #     a pure emptiness test — blanking initrd makes it pass.
+      #   - config.go initrd(): `if p == "" { return "", nil }` — empty stays empty.
+      #   - decodeDropIns -> updateFromDropIn -> applyHypervisorKey -> copyFieldValue:
+      #     an explicitly-present `initrd = ""` key IS applied and copied unconditionally
+      #     (no IsZero/empty guard), so it overrides the injected path to "".
+      dropIn: |
+        [hypervisor.firecracker]
+        initrd = ""
 
   # The chart's DEFAULT_SHIM defaults to qemu, but this release only enables the
   # fc shim — kata-deploy's install script aborts if DEFAULT_SHIM is not among the
