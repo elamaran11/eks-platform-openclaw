@@ -9,7 +9,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/elamaran11/eks-platform-openclaw
-    targetRevision: feat/kata-nested-8i-kata-deploy
+    targetRevision: main
     path: examples/finance-assistant
     directory:
       include: '{workspace-pvc.yaml,networkpolicy.yaml,system-prompt-configmap.yaml,adapter-configmap.yaml,sandbox.yaml}'
@@ -31,7 +31,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/elamaran11/eks-platform-openclaw
-    targetRevision: feat/kata-nested-8i-kata-deploy
+    targetRevision: main
     path: examples/finance-assistant/web-ui/k8s
   destination:
     server: https://kubernetes.default.svc
