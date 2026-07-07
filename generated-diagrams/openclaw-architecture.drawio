@@ -16,10 +16,10 @@
         <mxCell id="eks-cluster" parent="1" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_eks;strokeColor=#E7157B;fillColor=#FFF0F7;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=13;fontStyle=0;" value="&lt;b&gt;Managed System Nodegroup (m5.large × 2)&lt;/b&gt;" vertex="1">
           <mxGeometry height="290" width="520" x="710" y="260" as="geometry" />
         </mxCell>
-        <mxCell id="kata-node" parent="1" style="strokeColor=#FF6B35;fillColor=#FFF5F0;strokeDashArray=8 4;strokeWidth=2;rounded=1;arcSize=4;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=12;fontStyle=1;" value="Karpenter NodePools: kata-nested / kata-fc (c8i/m8i) + kata-metal / kata-fc-metal (.metal) · stock AL2023, kata-deploy installs runtime (no baked AMI)" vertex="1">
+        <mxCell id="kata-node" parent="1" style="strokeColor=#FF6B35;fillColor=#FFF5F0;strokeDashArray=8 4;strokeWidth=2;rounded=1;arcSize=4;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=12;fontStyle=1;" value="Karpenter NodePools: kata-nested (c8i/m8i) + kata-metal (c5.metal) · Packer-baked AMI" vertex="1">
           <mxGeometry height="280" width="380" x="310" y="260" as="geometry" />
         </mxCell>
-        <mxCell id="kata-vm" parent="1" style="strokeColor=#FF6B35;fillColor=#FFE8D6;strokeDashArray=4 2;strokeWidth=4;rounded=1;arcSize=4;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=11;fontStyle=2;" value="&lt;b&gt;Kata VM: QEMU / Cloud Hypervisor / Firecracker  ·  Hardware Isolation Boundary&lt;/b&gt;" vertex="1">
+        <mxCell id="kata-vm" parent="1" style="strokeColor=#FF6B35;fillColor=#FFE8D6;strokeDashArray=4 2;strokeWidth=4;rounded=1;arcSize=4;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=11;fontStyle=2;" value="&lt;b&gt;Kata QEMU Virtual Machine  ·  Hardware Isolation Boundary&lt;/b&gt;" vertex="1">
           <mxGeometry height="200" width="340" x="330" y="310" as="geometry" />
         </mxCell>
         <mxCell id="openclaw-label" parent="1" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" value="OpenClaw Agent" vertex="1">
@@ -191,7 +191,7 @@
         <mxCell id="1" parent="0" />
 
         <!-- Title -->
-        <mxCell id="title" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fontFamily=Helvetica;fontColor=#232F3E;fillColor=none;strokeColor=none;" value="Finance Assistant — Per-user Kata VM · @amazon.com only · Karpenter + kata-deploy (no baked AMI) · qemu / clh / firecracker" vertex="1">
+        <mxCell id="title" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fontFamily=Helvetica;fontColor=#232F3E;fillColor=none;strokeColor=none;" value="Finance Assistant — Per-user Kata VM · @amazon.com only · Karpenter + Pre-baked AMI" vertex="1">
           <mxGeometry x="200" y="20" width="1254" height="30" as="geometry" />
         </mxCell>
 
@@ -214,15 +214,15 @@
           <mxGeometry x="245" y="194" width="140" height="30" as="geometry" />
         </mxCell>
 
-        <!-- kata-deploy install paths (top-right) -->
-        <mxCell id="kata-deploy-box" parent="1" style="rounded=1;arcSize=4;strokeColor=#FF4F00;fillColor=#FFF3E6;strokeDashArray=8 4;strokeWidth=2;html=1;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontFamily=Helvetica;fontColor=#B13400;spacingTop=8;" value="At boot: kata-deploy installs runtime" vertex="1">
-          <mxGeometry x="1240" y="120" width="280" height="130" as="geometry" />
+        <!-- Packer AMI bake (top-right, outside VPC) -->
+        <mxCell id="packer-box" parent="1" style="rounded=1;arcSize=4;strokeColor=#FF4F00;fillColor=#FFF3E6;strokeDashArray=8 4;strokeWidth=2;html=1;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontFamily=Helvetica;fontColor=#B13400;spacingTop=8;" value="One-time: Packer AMI bake" vertex="1">
+          <mxGeometry x="1260" y="128" width="260" height="112" as="geometry" />
         </mxCell>
-        <mxCell id="kata-deploy-ic" parent="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#FF4F00;strokeColor=#ffffff;labelBackgroundColor=#ffffff;align=center;html=1;fontSize=10;fontStyle=1;fontFamily=Helvetica;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_container_service;" value="" vertex="1">
-          <mxGeometry x="1256" y="156" width="48" height="48" as="geometry" />
+        <mxCell id="packer-ic" parent="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#FF4F00;strokeColor=#ffffff;labelBackgroundColor=#ffffff;align=center;html=1;fontSize=10;fontStyle=1;fontFamily=Helvetica;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2_ami;" value="" vertex="1">
+          <mxGeometry x="1278" y="162" width="48" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="kata-deploy-dtl" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=10;fontStyle=0;fontFamily=Helvetica;fontColor=#333333;fillColor=none;strokeColor=none;" value="stock AL2023 (no bake)&#xa;kata-deploy → qemu + clh&#xa;kata-deploy-fc → firecracker&#xa;(suffix=fc · devmapper)" vertex="1">
-          <mxGeometry x="1316" y="150" width="196" height="80" as="geometry" />
+        <mxCell id="packer-dtl" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=10;fontStyle=0;fontFamily=Helvetica;fontColor=#333333;fillColor=none;strokeColor=none;" value="packer build&#xa;AL2023 + Kata 3.27&#xa;+ QEMU + CH&#xa;→ AMI → tfvars" vertex="1">
+          <mxGeometry x="1336" y="160" width="170" height="70" as="geometry" />
         </mxCell>
 
         <!-- ======== VPC ======== -->
@@ -310,25 +310,25 @@
         <mxCell id="np-card" parent="1" style="rounded=1;arcSize=6;strokeColor=#FF6B35;fillColor=#FFF5F0;strokeDashArray=8 4;html=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=11;fontStyle=1;fontFamily=Helvetica;fontColor=#B13400;" value="Karpenter NodePools" vertex="1">
           <mxGeometry x="380" y="660" width="470" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="np-text" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=11;fontStyle=0;fontFamily=Helvetica;fontColor=#232F3E;fillColor=none;strokeColor=none;" value="• kata-nested / kata-fc (c8i · m8i · nested-virt)&#xa;• kata-metal / kata-fc-metal (.metal · fallback)&#xa;qemu+clh → kata-nested/metal · firecracker → kata-fc/kata-fc-metal" vertex="1">
+        <mxCell id="np-text" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=11;fontStyle=0;fontFamily=Helvetica;fontColor=#232F3E;fillColor=none;strokeColor=none;" value="• kata-nested (c8i · m8i · spot + on-demand)&#xa;• kata-metal (c5.metal · fallback)" vertex="1">
           <mxGeometry x="395" y="690" width="450" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="np-text2" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=10;fontStyle=0;fontFamily=Helvetica;fontColor=#555555;fillColor=none;strokeColor=none;" value="EC2NodeClass.amiSelector ← al2023@latest    labels: katacontainers.io/kata-runtime(-fc)=true    taints: kata / kata-fc = true:NoSchedule" vertex="1">
+        <mxCell id="np-text2" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=10;fontStyle=0;fontFamily=Helvetica;fontColor=#555555;fillColor=none;strokeColor=none;" value="EC2NodeClass.amiSelector ← kata_ami_id    labels: katacontainers.io/kata-runtime=true    taints: kata=true:NoSchedule" vertex="1">
           <mxGeometry x="395" y="735" width="450" height="40" as="geometry" />
         </mxCell>
 
         <!-- Kata Node (right column inside EKS) -->
-        <mxCell id="kata-node" parent="1" style="rounded=1;arcSize=4;strokeColor=#FF6B35;fillColor=#FFF5F0;strokeDashArray=8 4;strokeWidth=2;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=12;fontStyle=1;fontFamily=Helvetica;fontColor=#B13400;" value="Kata Node (Karpenter-provisioned · stock AL2023 + kata-deploy, no baked AMI)" vertex="1">
+        <mxCell id="kata-node" parent="1" style="rounded=1;arcSize=4;strokeColor=#FF6B35;fillColor=#FFF5F0;strokeDashArray=8 4;strokeWidth=2;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=12;fontStyle=1;fontFamily=Helvetica;fontColor=#B13400;" value="Kata Node (Karpenter-provisioned from baked AMI)" vertex="1">
           <mxGeometry x="930" y="380" width="540" height="420" as="geometry" />
         </mxCell>
 
         <!-- Kata QEMU VM -->
-        <mxCell id="kata-vm" parent="1" style="rounded=1;arcSize=4;strokeColor=#FF6B35;fillColor=#FFE8D6;strokeDashArray=4 2;strokeWidth=4;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=11;fontStyle=2;fontFamily=Helvetica;fontColor=#B13400;" value="&lt;b&gt;Kata VM (QEMU / CLH / Firecracker) · Hardware Isolation Boundary&lt;/b&gt;" vertex="1">
+        <mxCell id="kata-vm" parent="1" style="rounded=1;arcSize=4;strokeColor=#FF6B35;fillColor=#FFE8D6;strokeDashArray=4 2;strokeWidth=4;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=11;fontStyle=2;fontFamily=Helvetica;fontColor=#B13400;" value="&lt;b&gt;Kata QEMU VM · Hardware Isolation Boundary&lt;/b&gt;" vertex="1">
           <mxGeometry x="960" y="430" width="480" height="360" as="geometry" />
         </mxCell>
 
         <!-- Sandbox pod name -->
-        <mxCell id="sandbox-name" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=10;fontStyle=2;fontFamily=Helvetica;fontColor=#555555;fillColor=none;strokeColor=none;" value="finance-sandbox-&lt;suffix&gt;   (RuntimeClass: kata-qemu | kata-clh | kata-fc)" vertex="1">
+        <mxCell id="sandbox-name" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=10;fontStyle=2;fontFamily=Helvetica;fontColor=#555555;fillColor=none;strokeColor=none;" value="finance-sandbox-&lt;suffix&gt;   (RuntimeClass: kata-qemu)" vertex="1">
           <mxGeometry x="975" y="450" width="450" height="18" as="geometry" />
         </mxCell>
 
@@ -404,7 +404,7 @@
         </mxCell>
 
         <!-- Flow legend (bottom-left, fully outside AWS Cloud) -->
-        <mxCell id="legend" parent="1" style="rounded=1;arcSize=4;strokeColor=#888888;fillColor=#FFFFE0;html=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=10;fontSize=11;fontStyle=0;fontFamily=Helvetica;fontColor=#333333;" value="&lt;b style=&quot;font-size:13px&quot;&gt;Flow&lt;/b&gt;&#xa;&#xa;&lt;b&gt;①&lt;/b&gt; Browser → ALB → finance-ui&#xa;&lt;b&gt;②&lt;/b&gt; UI calls Cognito (direct API, not ALB OIDC)&#xa;&lt;b&gt;③&lt;/b&gt; UI fires /api/warmup after sign-in&#xa;&lt;b&gt;④&lt;/b&gt; Router ensures PVC + Sandbox (withRetry)&#xa;&lt;b&gt;⑤&lt;/b&gt; Karpenter provisions Kata node · kata-deploy installs runtime&#xa;&lt;b&gt;⑥&lt;/b&gt; User types — SSE /api/chat to router&#xa;&lt;b&gt;⑦&lt;/b&gt; Adapter → openclaw loopback :18789&#xa;&lt;b&gt;⑧&lt;/b&gt; openclaw → LiteLLM → Bedrock&#xa;&lt;b&gt;⑨&lt;/b&gt; Tokens stream back · timestamp + latency&#xa;&lt;b&gt;⑩&lt;/b&gt; Idle &gt;30m → reaper deletes Sandbox · EFS kept" vertex="1">
+        <mxCell id="legend" parent="1" style="rounded=1;arcSize=4;strokeColor=#888888;fillColor=#FFFFE0;html=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=10;fontSize=11;fontStyle=0;fontFamily=Helvetica;fontColor=#333333;" value="&lt;b style=&quot;font-size:13px&quot;&gt;Flow&lt;/b&gt;&#xa;&#xa;&lt;b&gt;①&lt;/b&gt; Browser → ALB → finance-ui&#xa;&lt;b&gt;②&lt;/b&gt; UI calls Cognito (direct API, not ALB OIDC)&#xa;&lt;b&gt;③&lt;/b&gt; UI fires /api/warmup after sign-in&#xa;&lt;b&gt;④&lt;/b&gt; Router ensures PVC + Sandbox (withRetry)&#xa;&lt;b&gt;⑤&lt;/b&gt; Karpenter provisions Kata node from baked AMI&#xa;&lt;b&gt;⑥&lt;/b&gt; User types — SSE /api/chat to router&#xa;&lt;b&gt;⑦&lt;/b&gt; Adapter → openclaw loopback :18789&#xa;&lt;b&gt;⑧&lt;/b&gt; openclaw → LiteLLM → Bedrock&#xa;&lt;b&gt;⑨&lt;/b&gt; Tokens stream back · timestamp + latency&#xa;&lt;b&gt;⑩&lt;/b&gt; Idle &gt;30m → reaper deletes Sandbox · EFS kept" vertex="1">
           <mxGeometry x="40" y="550" width="290" height="290" as="geometry" />
         </mxCell>
 
@@ -502,8 +502,8 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <!-- kata-deploy → NodePools card (dashed orange) -->
-        <mxCell id="e-katadeploy-np" parent="1" source="kata-deploy-box" target="np-card" edge="1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#FF4F00;strokeWidth=1.5;dashed=1;fontSize=10;fontStyle=2;fontFamily=Helvetica;fontColor=#B13400;endArrow=classic;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.2;entryDx=0;entryDy=0;" value="installs runtime on kata nodes">
+        <!-- Packer → NodePools card (dashed orange) -->
+        <mxCell id="e-packer-np" parent="1" source="packer-box" target="np-card" edge="1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#FF4F00;strokeWidth=1.5;dashed=1;fontSize=10;fontStyle=2;fontFamily=Helvetica;fontColor=#B13400;endArrow=classic;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.2;entryDx=0;entryDy=0;" value="AMI id → amiSelector">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="1230" y="184" />
