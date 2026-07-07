@@ -6,6 +6,12 @@ Every agent conversation runs inside a Kata Containers QEMU virtual machine on E
 
 ![Architecture](generated-diagrams/openclaw-architecture.png)
 
+> The diagram shows the core request flow. The full set of supported runtime
+> options — 3 VMMs (`kata-qemu`, `kata-clh`, `kata-fc`) × nested-virt/bare-metal
+> node pools — is enumerated in [Key design decisions](#2-karpenter-for-all-workload-nodes-no-eks-auto-mode)
+> and [VMM startup benchmark](#vmm-startup-benchmark). _(Diagram refresh to depict
+> the Firecracker pools is pending a draw.io export of `generated-diagrams/openclaw-architecture.drawio`.)_
+
 ---
 
 ## Why this architecture
@@ -34,10 +40,14 @@ Fargate gives you VM isolation but no control over the runtime. Lambda gives you
 
 The cluster runs a small **managed system nodegroup** (2× `m5.large`) for ArgoCD, Karpenter itself, CoreDNS, monitoring, LiteLLM, and the UI/router pods. Everything else — including the kata bare-metal nodes — is provisioned by **Karpenter** via two NodePools:
 
-- `kata-nested` — `c8i` / `m8i` nested-virt, spot + on-demand (default; cheaper)
-- `kata-metal` — `c5.metal` / `i3.metal` / `m5.metal` on-demand (fallback)
+- `kata-nested` — `c8i` / `m8i` nested-virt, spot + on-demand (default; cheaper) — runs **qemu + clh**
+- `kata-metal` — `c5.metal` / `i3.metal` / `m5.metal` on-demand (fallback) — runs **qemu + clh**
+- `kata-fc` — `c8i` / `m8i` nested-virt — runs **Firecracker**
+- `kata-fc-metal` — `c5.metal` / `i3.metal` / `m5.metal` on-demand (fallback) — runs **Firecracker**
 
-Both NodePools are labeled `katacontainers.io/kata-runtime=true` and tainted `kata=true:NoSchedule`, so only kata-runtimeClass pods can schedule on them. Karpenter picks the cheapest node that satisfies the workload's requirements, scales to zero when idle, and replaces interrupted spot nodes automatically.
+The qemu/clh pools are labeled `katacontainers.io/kata-runtime=true` / tainted `kata=true:NoSchedule`; the Firecracker pools use `katacontainers.io/kata-runtime-fc=true` / `kata-fc=true:NoSchedule`. Firecracker is isolated on its own pools because it requires a **devmapper** block snapshotter (set up in `userData`) while qemu/clh use overlayfs — the two must never co-locate. A workload chooses its VMM purely via `runtimeClassName` (`kata-qemu`, `kata-clh`, or `kata-fc`); the RuntimeClass carries the nodeSelector + toleration that steers it onto the right pool. Karpenter picks the cheapest node that satisfies the workload's requirements, scales to zero when idle, and replaces interrupted spot nodes automatically.
+
+**Supported options at a glance:** 3 VMMs (`kata-qemu` default, `kata-clh`, `kata-fc`) × 2 instance classes (nested-virt `8i`, bare-metal `.metal`). See the [VMM startup benchmark](#vmm-startup-benchmark) for how they compare.
 
 **EKS Auto Mode is intentionally NOT used.** Auto Mode's built-in Karpenter does not let us set `cpuOptions.nestedVirtualization` on launch or load the KVM kernel module that kata requires. Running Karpenter ourselves lets us:
 - Enable nested virtualization per NodePool via `EC2NodeClass.cpuOptions.nestedVirtualization=enabled`
@@ -76,8 +86,10 @@ The platform has strict deployment ordering requirements: Karpenter must be up b
 
 ```
 Wave -1: karpenter, agent-sandbox        # Karpenter controller + Sandbox CRD
-Wave  0: karpenter-nodepools, kata       # NodePools + EC2NodeClass, kata StorageClass
-Wave  1: kata-deploy, monitoring          # kata-qemu runtime install, Prometheus
+Wave  0: karpenter-nodepools, kata       # 4 NodePools + EC2NodeClasses,
+                                         #   kata StorageClass + RuntimeClasses
+Wave  1: kata-deploy, kata-deploy-fc,    # qemu+clh install; firecracker install;
+         monitoring                      #   each with a kata-readiness gate; Prometheus
 Wave  2: litellm                          # OpenAI-compat proxy to Bedrock
 Wave  3: openclaw, external-dns,          # Operator, DNS, ALB IngressClass
          ingressclass-alb
@@ -91,7 +103,7 @@ Wave  5: finance-assistant-ui             # UI + ALB Ingress + Cognito
 
 | Capability | Detail |
 |---|---|
-| Agent isolation | Kata QEMU VM per agent — hardware boundary, own kernel |
+| Agent isolation | Kata VM per agent (QEMU, Cloud Hypervisor, or Firecracker) — hardware boundary, own kernel |
 | Model access | Claude Sonnet 4.6, Opus 4, Haiku 4.5 via Bedrock cross-region inference |
 | Content safety | Bedrock Guardrail — PII anonymization + content filtering on every request |
 | Credentials | EKS Pod Identity — no static keys anywhere |
@@ -121,9 +133,16 @@ Wave  5: finance-assistant-ui             # UI + ALB Ingress + Cognito
 git clone https://github.com/YOUR_ORG/eks-platform-openclaw
 cd eks-platform-openclaw
 
-cat > terraform/terraform.tfvars <<EOF
-gitops_repo_url = "https://github.com/YOUR_ORG/eks-platform-openclaw"
-EOF
+# Configure deployment parameters. Two options — pick ONE:
+
+#  (a) .env (recommended) — one place for account/domain/cognito/cert/route53.
+#      install.sh sources it and generates terraform.tfvars for you.
+cp .env.example .env
+$EDITOR .env
+
+#  (b) terraform.tfvars directly, if you prefer native Terraform config:
+# cp terraform/terraform.tfvars.example terraform/terraform.tfvars
+# $EDITOR terraform/terraform.tfvars
 
 # 2. Deploy everything (~15 minutes)
 chmod +x scripts/install.sh
@@ -213,10 +232,12 @@ gitops/
     slack.yaml                # Slack sandbox (wave 4)
 
   helm/
-    karpenter-nodepools/  # kata-nested + kata-metal NodePools, EC2NodeClass
-    kata-deploy/          # kata-deploy DaemonSet + kata-readiness startup-taint gate
+    karpenter-nodepools/  # kata-nested, kata-metal, kata-fc, kata-fc-metal NodePools + EC2NodeClasses
+    kata/                 # kata StorageClass + kata-qemu/kata-clh/kata-fc RuntimeClasses
+    kata-deploy/          # qemu+clh runtime installer + kata-readiness startup-taint gate
+    kata-deploy-fc/       # firecracker runtime installer (multiInstallSuffix=fc) + kata-readiness-fc
     litellm/              # LiteLLM proxy with sitecustomize.py Bedrock patch
-    openclaw/             # OpenClaw Sandbox CRD + related manifests
+    openclaw/             # OpenClaw Sandbox CRD + related manifests (Paperclip operator chart)
 
 examples/
   finance-assistant/    # Per-user finance-assistant app (Sandbox + web-ui + router)
@@ -238,11 +259,11 @@ Since we run Karpenter ourselves (not EKS Auto Mode's built-in), getting kata no
 
 2. **Karpenter controller** (ArgoCD wave -1) — installed via the upstream Karpenter Helm chart, uses IRSA via Pod Identity. Watches Pending pods and provisions nodes on demand.
 
-3. **Karpenter NodePools + EC2NodeClass** (ArgoCD wave 0) — `kata-nested` and `kata-metal` NodePools use the `al2023@latest` AMI alias. The `kata-nested` EC2NodeClass sets `cpuOptions.nestedVirtualization=enabled`; both run `modprobe kvm_intel` in `userData` so `/dev/kvm` exists before kata-deploy lands. Subnet + SG discovery via `karpenter.sh/discovery=<cluster-name>` tag.
+3. **Karpenter NodePools + EC2NodeClasses** (ArgoCD wave 0) — the four pools (`kata-nested`, `kata-metal`, `kata-fc`, `kata-fc-metal`) all use the `al2023@latest` AMI alias. The nested pools set `cpuOptions.nestedVirtualization=enabled` (the `.metal` pools have native VT-x); all run `modprobe kvm_intel` in `userData` so `/dev/kvm` exists before kata-deploy lands, and the two fc pools additionally build a devmapper thin-pool + wire containerd's devmapper snapshotter. Subnet + SG discovery via `karpenter.sh/discovery=<cluster-name>` tag. The `kata` chart also creates the `kata-qemu` / `kata-clh` / `kata-fc` RuntimeClasses here.
 
-4. **kata-deploy DaemonSet** (ArgoCD wave 1) — runs only on nodes labeled `katacontainers.io/kata-runtime=true` (which Karpenter applies from the NodePool). It installs the Kata binaries + guest kernel, patches containerd for the `kata-qemu` runtime, creates the `kata-qemu` RuntimeClass, and restarts containerd. A companion `kata-readiness` DaemonSet watches the kata-deploy pod's `/readyz` and removes the `katacontainers.io/runtime-not-ready` startup taint once install completes, so no kata workload binds before the runtime is ready. (kubelet's CRI client reconnects to containerd on its own; the old `kata-kubelet-restart` DaemonSet is parked in `_kata-kubelet-restart.yaml.disabled` if a deploy ever needs it.)
+4. **kata-deploy DaemonSets** (ArgoCD wave 1) — two releases, one per VMM family. **kata-deploy** runs on `kata-enabled=true` nodes and installs the **qemu + clh** shims + containerd handlers; **kata-deploy-fc** runs on `kata-fc-enabled=true` nodes and installs **only the firecracker** shim (with `multiInstallSuffix=fc`, so it never touches the qemu nodes and installs into `/opt/kata-fc`). Each has a companion `kata-readiness` DaemonSet that watches its kata-deploy pod's `/readyz` and removes the `katacontainers.io/runtime-not-ready` startup taint once install completes, so no kata workload binds before the runtime is ready. (kubelet's CRI client reconnects to containerd on its own; the old `kata-kubelet-restart` DaemonSet is parked in `_kata-kubelet-restart.yaml.disabled` if a deploy ever needs it.)
 
-5. **Workload pods** with `runtimeClassName: kata-qemu` — Karpenter sees a Pending pod with the required taint toleration + nodeSelector, provisions a kata NodePool node, the pod schedules, the QEMU VM boots.
+5. **Workload pods** with `runtimeClassName: kata-qemu` / `kata-clh` / `kata-fc` — Karpenter sees a Pending pod whose RuntimeClass carries the required taint toleration + nodeSelector, provisions a node in the matching pool, the pod schedules, and the VM (QEMU, Cloud Hypervisor, or Firecracker) boots.
 
 ---
 
@@ -285,8 +306,55 @@ Notes:
   injects an `initrd=` alongside the stock image-based config, which Firecracker
   rejects ("Image and initrd path cannot be both set"); the install paths also
   need `/opt/kata` → `/opt/kata-fc` under the suffix. Validated by keeping the
-  image-based config and dropping the injected `initrd=`. Folding this into the
-  `kata-deploy-fc` chart is tracked follow-up work.
+  image-based config and dropping the injected `initrd=`. This is now fixed
+  declaratively in the `kata-deploy-fc` chart (`shims.fc.dropIn`), so kata-fc
+  runs out of the box with no on-node patching.
+
+### Reproducing these numbers
+
+The table above is produced by `scripts/benchmark-vmm-startup.sh`, which runs
+against a live cluster with the kata pools deployed. For each combination it
+scales the target pool to zero, provisions a cold node, launches a 1st (cold)
+pod and a 2nd (warm) pod, reads the timings from Kubernetes object timestamps,
+and prints a Markdown results table.
+
+```bash
+# All six combinations (prompts before provisioning — incl. 3 bare-metal nodes):
+./scripts/benchmark-vmm-startup.sh
+
+# A subset (no confirmation prompt):
+./scripts/benchmark-vmm-startup.sh --combos fc-nested,fc-metal --yes
+
+# Valid combos: qemu-nested clh-nested fc-nested qemu-metal clh-metal fc-metal
+./scripts/benchmark-vmm-startup.sh --help
+```
+
+What each option measures:
+
+| Option | Meaning |
+|---|---|
+| `--combos <csv>` | Run only the listed combinations (default: all 6) |
+| `--yes` / `-y` | Skip the cost confirmation prompt |
+| `--help` / `-h` | Print the script's header docs |
+
+> **Cost:** this provisions on-demand nodes, including three bare-metal
+> (`.metal`) instances for the `*-metal` combos. Run a subset with `--combos`
+> to limit spend. The script scales each pool to zero before its run, but does
+> not tear down the cluster — that's `./scripts/cleanup.sh`.
+
+The script prints a table identical in shape to the one above. Capture that
+output (or a terminal screenshot) from your own run to record results for your
+account/region:
+
+```
+| VMM        | Instance       | NodeBoot  | 1stPod   | ColdTotal  | 2ndPod    |
+|------------|----------------|-----------|----------|------------|-----------|
+| kata-qemu  | kata-nested    |     100s  |     4s   |      104s  |     2s    |
+| ...        | ...            |    ...    |   ...    |     ...    |    ...    |
+```
+
+<!-- Paste a screenshot of your own benchmark run here, e.g.:
+![VMM benchmark run](generated-diagrams/vmm-benchmark-run.png) -->
 
 ## Teardown
 
