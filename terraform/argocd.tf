@@ -2,8 +2,12 @@
 # aws_eks_capability is not yet available in the Terraform AWS provider
 
 module "eks_blueprints_addons" {
-  source  = "aws-ia/eks-blueprints-addons/aws"
-  version = "~> 1.0"
+  source = "aws-ia/eks-blueprints-addons/aws"
+  # Pin to the last 1.x line that requires helm ~> 2.x. v1.24.0 bumped its helm
+  # provider requirement to ">= 3.0", which conflicts with this stack's
+  # helm "~> 2.0" pin (versions.tf) and the locked provider (helm 2.17.0),
+  # producing an unsatisfiable "~> 2.0, >= 3.0.0" during `terraform init -upgrade`.
+  version = "~> 1.23.0"
 
   cluster_name      = module.eks.cluster_name
   cluster_endpoint  = module.eks.cluster_endpoint
