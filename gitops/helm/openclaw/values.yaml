@@ -1,16 +1,22 @@
 openclaw-operator:
-  image:
-    repository: public.ecr.aws/t6v6o5d5/kube-prometheus
-    tag: openclaw-operator-v0.22.2
+  # image omitted on purpose — the 0.36 chart defaults to the correct
+  # ghcr.io/paperclipinc/openclaw-operator image at the chart appVersion.
+  # (The old value pointed at a kube-prometheus image, a stale copy-paste.)
 
-  litellm:
-    endpoint: http://litellm.litellm.svc.cluster.local:4000
-    # apiKey injected at deploy time from Kubernetes secret
+  # Pin the operator to the managed system nodegroup (labeled role=system,
+  # same target as Karpenter/ArgoCD). The toleration mirrors the Karpenter
+  # app; the system MNG is only labeled (not tainted), so it's a harmless
+  # consistency measure.
+  nodeSelector:
+    role: system
+  tolerations:
+    - key: role
+      operator: Equal
+      value: system
+      effect: NoSchedule
 
-  sandbox:
-    runtimeClassName: kata-qemu
-    tolerations:
-      - key: kata
-        operator: Equal
-        value: "true"
-        effect: NoSchedule
+# NOTE: litellm endpoint + kata sandbox runtimeClass/tolerations were values
+# on the old 0.22 chart. In 0.36 the operator chart only deploys the operator
+# itself; per-agent config (litellm endpoint, runtimeClassName: kata-qemu,
+# kata tolerations) now lives on an OpenClawInstance CRD applied separately.
+# Track that as a follow-up once the operator is healthy.

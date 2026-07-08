@@ -1,16 +1,18 @@
 # Set by Terraform at install time via ArgoCD helm parameters
 clusterName: openclaw-eks
 nodeRole: KarpenterNodeRole-openclaw-eks
-kataAmiId: "ami-0d8883d5d5f9702e4"
+# No kataAmiId: NodeClasses use the stock al2023@latest AMI and kata-deploy
+# installs Kata at runtime — nothing is baked with Packer anymore.
 
-# Nested-virt pool (default): cheaper, more reliable than bare metal
+# Nested-virt pool (default): cheaper, more reliable than bare metal.
+# instanceFamilies are scoped to families validated for nested KVM; minVcpu keeps
+# a floor for VM overhead. Karpenter picks any size >= the floor in these families.
 kataNested:
   enabled: true
-  instanceTypes:
-    - c8i.4xlarge
-    - c8i.8xlarge
-    - m8i.4xlarge
-    - m8i.8xlarge
+  instanceFamilies:
+    - c8i
+    - m8i
+  minVcpu: "4" # Gt → 2xlarge (8 vCPU) and up
   capacityTypes: ["spot", "on-demand"]
   cpuLimit: 500
   consolidateAfter: 5m
@@ -23,5 +25,32 @@ kataMetal:
     - i3.metal
     - m5.metal
   capacityTypes: ["on-demand"] # spot has been unreliable
+  cpuLimit: 200
+  consolidateAfter: 10m
+
+# Firecracker pool: runs ALONGSIDE the kata-qemu pools (does not replace them).
+# Self-configures a devmapper thin-pool in userData (Firecracker needs a block
+# snapshotter, not overlayfs). Workloads opt in with runtimeClassName: kata-fc
+# plus the kata-fc taint toleration + katacontainers.io/kata-runtime-fc selector.
+kataFc:
+  enabled: true
+  instanceFamilies:
+    - c8i
+    - m8i
+  minVcpu: "4" # Gt → 2xlarge (8 vCPU) and up
+  capacityTypes: ["spot", "on-demand"]
+  cpuLimit: 500
+  consolidateAfter: 5m
+
+# Firecracker bare-metal pool (fallback for kataFc, mirrors kataMetal). Same fc
+# label/taint so the kata-deploy-fc release + kata-readiness-fc cover it. Explicit
+# .metal types (span families/generations a single family filter can't express).
+kataFcMetal:
+  enabled: true
+  instanceTypes:
+    - c5.metal
+    - i3.metal
+    - m5.metal
+  capacityTypes: ["on-demand"] # spot has been unreliable for metal
   cpuLimit: 200
   consolidateAfter: 10m

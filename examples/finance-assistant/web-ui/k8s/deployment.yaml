@@ -23,9 +23,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ui
-          # Image, Cognito values, and certificate ARN are rendered by
-          # scripts/render-finance-ui.sh from terraform outputs. This
-          # file is checked in with live values for the current cluster.
+          # Image, Cognito values, and certificate ARN are substituted by
+          # scripts/render-finance-ui.sh from terraform outputs.
+          # The __PLACEHOLDERS__ below are NOT real values.
           image: 940019131157.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.9.7
           imagePullPolicy: IfNotPresent
           ports:
@@ -39,9 +39,9 @@ spec:
             - name: COGNITO_REGION
               value: us-west-2
             - name: COGNITO_USER_POOL_ID
-              value: us-west-2_tiALOdP0V
+              value: us-west-2_22HtFw1vD
             - name: COGNITO_CLIENT_ID
-              value: 37auqdoc2egfafdijoga59inmp
+              value: 6rk11mf5nkprv51ms7tvh2f1i8
             - name: COGNITO_DOMAIN_PREFIX
               value: openclaw-finance-940019131157
             - name: COGNITO_CLIENT_SECRET

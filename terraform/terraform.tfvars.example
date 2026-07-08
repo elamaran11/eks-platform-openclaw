@@ -1,11 +1,28 @@
 region           = "us-west-2"
 bedrock_region   = "us-west-2"
 project_name     = "openclaw"
-cluster_version  = "1.32"
-enable_kata_nodes = true
+cluster_version  = "1.36"
 
-# Required: Git repo ArgoCD watches for app-of-apps
-gitops_repo_url  = "https://github.com/YOUR_ORG/eks-platform-openclaw"
+# ---- Required (no defaults) ----
 
-# Optional: additional IAM roles granted cluster-admin via access entries
+# Git repo ArgoCD watches for the app-of-apps root
+gitops_repo_url   = "https://github.com/YOUR_ORG/eks-platform-openclaw"
+
+# Route53 public hosted zone external-dns manages records in
+route53_zone_id   = "Z0123456789ABCDEFGHIJ"
+route53_zone_name = "example.com"
+
+# ACM wildcard cert ARN for the domain (do NOT commit a real tfvars with this)
+wildcard_cert_arn = "arn:aws:acm:us-west-2:123456789012:certificate/your-cert-id"
+
+# Public hostname for the finance-assistant UI
+finance_ui_host   = "finassist.example.com"
+
+# ---- Optional (defaults shown) ----
+
+# Git branch/tag ArgoCD tracks for the app-of-apps root (default: HEAD)
+# Set this to a branch name to have ArgoCD deploy from that branch.
+# gitops_target_revision = "main"
+
+# Additional IAM roles granted cluster-admin via access entries
 # admin_role_arns = ["arn:aws:iam::123456789012:role/my-admin-role"]

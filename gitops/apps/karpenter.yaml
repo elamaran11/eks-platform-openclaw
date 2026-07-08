@@ -12,7 +12,8 @@ spec:
   source:
     repoURL: public.ecr.aws/karpenter
     chart: karpenter
-    targetRevision: "1.9.0"
+    # 1.13.0+ required for EC2NodeClass spec.cpuOptions.nestedVirtualization (aws/karpenter-provider-aws#9043)
+    targetRevision: "1.13.0"
     helm:
       releaseName: karpenter
       valuesObject:

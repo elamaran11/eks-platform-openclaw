@@ -11,15 +11,11 @@ spec:
   project: default
   source:
     repoURL: https://github.com/elamaran11/eks-platform-openclaw
-    targetRevision: main
+    targetRevision: feat/kata-nested-8i-kata-deploy
     path: gitops/helm/kata
   destination:
     server: https://kubernetes.default.svc
     namespace: kube-system
-  ignoreDifferences:
-    - group: node.k8s.io
-      kind: RuntimeClass
-      name: kata-qemu
   syncPolicy:
     automated:
       prune: true

@@ -31,7 +31,7 @@ data:
                 "runAsNonRoot": true,
                 "seccompProfile": { "type": "RuntimeDefault" }
               },
-              "nodeSelector": { "katacontainers.io/kata-runtime": "true" },
+              "nodeSelector": { "node-type": "kata-nested" },
               "tolerations": [
                 { "key": "kata", "operator": "Equal", "value": "true", "effect": "NoSchedule" }
               ],

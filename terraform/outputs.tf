@@ -80,6 +80,12 @@ output "finance_cognito_client_id" {
   value       = aws_cognito_user_pool_client.finance.id
 }
 
+output "finance_cognito_client_secret" {
+  description = "Cognito app client secret (used to build the finance-ui-auth secret)"
+  value       = aws_cognito_user_pool_client.finance.client_secret
+  sensitive   = true
+}
+
 output "finance_cognito_domain" {
   description = "Cognito hosted UI domain prefix (plug into ALB auth annotation)"
   value       = aws_cognito_user_pool_domain.finance.domain

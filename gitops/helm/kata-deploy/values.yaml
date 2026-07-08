@@ -1,13 +1,23 @@
 kata-deploy:
   image:
     reference: quay.io/kata-containers/kata-deploy
-    tag: "3.27.0"
+    tag: "3.32.0"
+  # Target kata nodes by the STATIC label set in the Karpenter NodePool template.
+  # Do NOT use katacontainers.io/kata-runtime here — kata-deploy *emits* that label
+  # only after install completes, so selecting on it would deadlock (never schedules
+  # -> never installs -> never labels).
   nodeSelector:
-    katacontainers.io/kata-runtime: "true"
+    kata-enabled: "true"
   tolerations:
+    # Workload taint — only kata pods run on these nodes.
     - key: kata
       operator: Equal
       value: "true"
+      effect: NoSchedule
+    # Startup taint — kata-deploy must run *despite* it (it's what clears the node
+    # for workloads once install finishes). The kata-readiness DaemonSet removes it.
+    - key: katacontainers.io/runtime-not-ready
+      operator: Exists
       effect: NoSchedule
   shims:
     disableAll: true
@@ -15,3 +25,10 @@ kata-deploy:
       enabled: true
     clh:
       enabled: true
+  # RuntimeClasses are owned by the kata chart (gitops/helm/kata/templates/
+  # runtimeclass-{qemu,clh,fc}.yaml) so all VMMs are declared the same way and carry
+  # our pool-steering scheduling block. Disable the chart's auto-generated ones to
+  # avoid two RuntimeClasses fighting over the same names. kata-deploy still installs
+  # the qemu + clh shims and registers their containerd runtime handlers.
+  runtimeClasses:
+    enabled: false

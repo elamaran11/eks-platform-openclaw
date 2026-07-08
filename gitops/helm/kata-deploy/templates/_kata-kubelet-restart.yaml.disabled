@@ -1,0 +1,39 @@
+# =============================================================================
+# PARKED / DISABLED — kubelet restart on kata nodes
+# =============================================================================
+# This is the kubelet-restart logic that previously lived in the kata-readiness
+# DaemonSet. We dropped it on the theory that kubelet's CRI client reconnects to
+# containerd automatically after kata-deploy's restart, making the bounce
+# unnecessary. This file is kept so we can revive it quickly if a real deploy
+# shows kubelet failing to re-probe the kata-qemu runtime after the containerd
+# restart (symptom: nodes get the katacontainers.io/kata-runtime label and the
+# startup taint is removed, but kata-qemu pods still fail RunPodSandbox).
+#
+# NOTE ON RENDERING: the leading underscore in the filename makes Helm treat this
+# as a partial (never rendered as a manifest), and the `.disabled` extension is a
+# second guard. The whole body is commented out, so it is inert regardless.
+#
+# -----------------------------------------------------------------------------
+# TO RE-ENABLE:
+#   1. Fold the restart back INTO templates/kata-readiness.yaml (do NOT run it as a
+#      separate DaemonSet — it must be sequenced AFTER the label-poll and BEFORE the
+#      taint removal). Insert between the "kata-deploy done" and "removing startup
+#      taint" steps:
+#
+#        echo "[kata-readiness] restarting kubelet to reconnect CRI..."
+#        nsenter -t 1 -m -u -i -n -p -- systemctl restart kubelet
+#        echo "[kata-readiness] waiting 30s for kubelet to stabilize..."
+#        sleep 30
+#
+#   2. Restore the host access the restart needs on the DaemonSet pod spec:
+#        hostPID: true
+#        hostNetwork: true
+#        dnsPolicy: ClusterFirstWithHostNet
+#        containers[0].securityContext: { privileged: true }
+#
+#   3. Switch the image back to one that bundles nsenter (e.g. nicolaka/netshoot).
+#      Plain kubectl images (bitnami/kubectl, rancher/kubectl) do NOT have nsenter.
+#
+# Because the node is still carrying the startup taint at this point, the restart
+# happens on an empty node — no workload pods to disrupt, so it is cheap insurance.
+# =============================================================================

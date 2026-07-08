@@ -26,7 +26,10 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       nodeSelector:
-        katacontainers.io/kata-runtime: "true"
+        # Pin to the kata-NESTED pool specifically (node-type is unique to it).
+        # NOT kata-enabled (on both nested+metal) and NOT katacontainers.io/kata-runtime
+        # (kata-deploy's post-install signal, gated by the startup taint).
+        node-type: kata-nested
       tolerations:
         - key: kata
           operator: Equal

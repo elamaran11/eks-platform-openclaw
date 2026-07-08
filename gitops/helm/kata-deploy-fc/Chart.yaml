@@ -1,6 +1,6 @@
 apiVersion: v2
-name: kata-deploy
-description: Kata Containers installer using official Helm chart
+name: kata-deploy-fc
+description: Kata Containers Firecracker (kata-fc) installer — second kata-deploy release scoped to the kata-fc nodepool
 type: application
 version: 0.1.0
 dependencies:

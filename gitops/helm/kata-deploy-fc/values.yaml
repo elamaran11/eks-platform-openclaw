@@ -1,0 +1,83 @@
+kata-deploy:
+  image:
+    reference: quay.io/kata-containers/kata-deploy
+    tag: "3.32.0"
+
+  # SECOND kata-deploy release, isolated from the qemu/clh one by a name suffix.
+  # kata-deploy installs EVERY enabled shim on EVERY node it lands on, so the only
+  # safe way to add Firecracker without touching the qemu nested/metal nodes is a
+  # separate release that (a) only enables the fc shim and (b) only selects fc nodes.
+  env:
+    # Suffix every cluster/namespace-scoped object (DaemonSet, SA, ClusterRole/Binding,
+    # RuntimeClasses) so this release does not collide with the kata-deploy release.
+    # The chart also disables its own default RuntimeClass when a suffix is set.
+    #
+    # IMPORTANT — handler naming: the suffix ALSO renames the containerd runtime
+    # handler kata-deploy registers, to kata-<shim>-<suffix> = kata-fc-fc. This is
+    # confirmed from the chart's own runtimeclasses.yaml template
+    # (`handler: kata-{{ .shim }}-{{ .multiInstallSuffix }}`), which must match what
+    # the install script writes into containerd. Our hand-written RuntimeClass
+    # (gitops/helm/kata/templates/runtimeclass-fc.yaml) is set to handler: kata-fc-fc
+    # to match. The RuntimeClass *name* stays kata-fc, so workloads
+    # (runtimeClassName: kata-fc) are unaffected by the suffix.
+    multiInstallSuffix: "fc"
+
+  # Land ONLY on the kata-fc nodepool. kata-fc-enabled is a STATIC label set at node
+  # birth by the NodePool template (present from boot) — do NOT select on
+  # katacontainers.io/kata-runtime-fc, which kata-deploy emits only AFTER install
+  # (selecting on it would deadlock: never schedules -> never installs -> never labels).
+  nodeSelector:
+    kata-fc-enabled: "true"
+
+  tolerations:
+    # Workload taint — only kata-fc pods run on these nodes.
+    - key: kata-fc
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+    # Startup taint — kata-deploy-fc must run DESPITE it; the kata-fc readiness
+    # DaemonSet removes it once this install reports Ready.
+    - key: katacontainers.io/runtime-not-ready
+      operator: Exists
+      effect: NoSchedule
+
+  # Only Firecracker. disableAll turns every shim off, then we re-enable fc alone —
+  # so this release never installs qemu/clh and never touches the qemu nodes.
+  # The fc shim ships snapshotter: "devmapper" by default; kata-deploy emits
+  # SNAPSHOTTER_HANDLER_MAPPING=kata-fc:devmapper and wires the kata-fc runtime into
+  # containerd against the devmapper thin-pool the EC2NodeClass userData pre-creates.
+  shims:
+    disableAll: true
+    fc:
+      enabled: true
+      # WORKAROUND for a kata-deploy multiInstallSuffix bug. When multiInstallSuffix
+      # is set, kata-deploy generates a config.d drop-in (10-installation-prefix.toml)
+      # that emits BOTH `image =` and `initrd =` under [hypervisor.firecracker]. The
+      # kata runtime rejects that ("Image and initrd path cannot be both set"), so no
+      # kata-fc sandbox can start. Firecracker's stock config is image-based, so we
+      # blank the injected initrd here. This dropIn is written as 50-user-overrides.toml
+      # and, being lexically after 10-*, wins the config.d merge.
+      #
+      # Confirmed against kata-containers v3.32.0 source (no live cluster needed):
+      #   - hypervisor_config_linux.go: the check is `ImagePath != "" && InitrdPath != ""`,
+      #     a pure emptiness test — blanking initrd makes it pass.
+      #   - config.go initrd(): `if p == "" { return "", nil }` — empty stays empty.
+      #   - decodeDropIns -> updateFromDropIn -> applyHypervisorKey -> copyFieldValue:
+      #     an explicitly-present `initrd = ""` key IS applied and copied unconditionally
+      #     (no IsZero/empty guard), so it overrides the injected path to "".
+      dropIn: |
+        [hypervisor.firecracker]
+        initrd = ""
+
+  # The chart's DEFAULT_SHIM defaults to qemu, but this release only enables the
+  # fc shim — kata-deploy's install script aborts if DEFAULT_SHIM is not among the
+  # enabled SHIMS ("DEFAULT_SHIM 'qemu' must be one of [fc]"). Point it at fc.
+  defaultShim:
+    amd64: fc
+
+  # We define the kata-fc RuntimeClass ourselves (gitops/helm/kata) because we need
+  # scheduling.nodeSelector + tolerations to steer pods onto the fc pool — the chart's
+  # generated RuntimeClass only carries katacontainers.io/kata-runtime. Disable the
+  # chart's so there is exactly one kata-fc RuntimeClass and no name fight.
+  runtimeClasses:
+    enabled: false

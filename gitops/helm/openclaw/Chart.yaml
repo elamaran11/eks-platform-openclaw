@@ -4,6 +4,9 @@ description: OpenClaw operator
 type: application
 version: 0.1.0
 dependencies:
+  # The OpenClaw operator chart is published by Paperclip Inc, which now
+  # maintains OpenClaw (the project moved orgs from openclaw-ocks). This OCI
+  # registry is the current upstream source — see https://ghcr.io/paperclipinc.
   - name: openclaw-operator
-    version: "0.22.2"
-    repository: oci://ghcr.io/openclaw-rocks/charts
+    version: "0.36.5"
+    repository: oci://ghcr.io/paperclipinc/charts
