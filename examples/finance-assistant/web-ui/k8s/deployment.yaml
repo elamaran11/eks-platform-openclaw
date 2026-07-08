@@ -26,7 +26,7 @@ spec:
           # Image, Cognito values, and certificate ARN are substituted by
           # scripts/render-finance-ui.sh from terraform outputs.
           # The __PLACEHOLDERS__ below are NOT real values.
-          image: __ACCOUNT_ID__.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.9.7
+          image: 940019131157.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.9.7
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
@@ -35,15 +35,15 @@ spec:
             - name: NODE_ENV
               value: production
             - name: APP_URL
-              value: https://__FINANCE_UI_HOST__
+              value: https://finassist.elamaras.people.aws.dev
             - name: COGNITO_REGION
               value: us-west-2
             - name: COGNITO_USER_POOL_ID
-              value: __COGNITO_USER_POOL_ID__
+              value: us-west-2_22HtFw1vD
             - name: COGNITO_CLIENT_ID
-              value: __COGNITO_CLIENT_ID__
+              value: 6rk11mf5nkprv51ms7tvh2f1i8
             - name: COGNITO_DOMAIN_PREFIX
-              value: __COGNITO_DOMAIN_PREFIX__
+              value: openclaw-finance-940019131157
             - name: COGNITO_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -115,13 +115,13 @@ metadata:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: '443'
-    alb.ingress.kubernetes.io/certificate-arn: __ACM_CERTIFICATE_ARN__
-    external-dns.alpha.kubernetes.io/hostname: __FINANCE_UI_HOST__
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:940019131157:certificate/2d6b2f41-9673-4c9e-a6ad-daa34982ced7
+    external-dns.alpha.kubernetes.io/hostname: finassist.elamaras.people.aws.dev
     alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=300
 spec:
   ingressClassName: alb
   rules:
-    - host: __FINANCE_UI_HOST__
+    - host: finassist.elamaras.people.aws.dev
       http:
         paths:
           - path: /
