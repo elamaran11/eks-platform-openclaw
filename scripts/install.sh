@@ -96,6 +96,36 @@ git -C "${ROOT_DIR}" add gitops/
 git -C "${ROOT_DIR}" diff --cached --quiet || git -C "${ROOT_DIR}" commit -m "chore: set ArgoCD repo URL"
 git -C "${ROOT_DIR}" push
 
+# ---------------- Finance-assistant bootstrap ----------------
+# The finance-assistant needs a few things ArgoCD can't create on its own:
+#   - runtime secrets sourced from the live LiteLLM master key + Cognito
+#     (finance-litellm-key, finance-ui-auth, openclaw-gateway-auth)
+#   - the session-router (not in the ArgoCD sandbox app's include list)
+#   - the finance-ui manifest rendered with this cluster's Cognito / ECR / host
+# Do it here so a fresh deploy is hands-off. Wait for LiteLLM's master key
+# (provisioned by the litellm ArgoCD app) before bootstrapping the secrets.
+echo "==> Waiting for LiteLLM master key (litellm/litellm-masterkey) ..."
+for _ in $(seq 1 60); do
+  kubectl -n litellm get secret litellm-masterkey >/dev/null 2>&1 && break
+  sleep 10
+done
+
+if kubectl -n litellm get secret litellm-masterkey >/dev/null 2>&1; then
+  echo "==> Bootstrapping finance-assistant secrets + session-router ..."
+  "${ROOT_DIR}/examples/finance-assistant/install.sh"
+
+  echo "==> Rendering finance-ui manifest (tag: ${FINANCE_UI_TAG:-latest}) ..."
+  "${SCRIPT_DIR}/render-finance-ui.sh" "${FINANCE_UI_TAG:-latest}"
+  git -C "${ROOT_DIR}" add examples/finance-assistant/web-ui/k8s/deployment.yaml gitops/helm/external-dns/values.yaml
+  git -C "${ROOT_DIR}" diff --cached --quiet || git -C "${ROOT_DIR}" commit -m "chore: render finance-ui for this cluster"
+  git -C "${ROOT_DIR}" push
+else
+  echo "WARN: litellm-masterkey not ready yet — skipping finance bootstrap."
+  echo "      Once LiteLLM is up, run:"
+  echo "        ./examples/finance-assistant/install.sh"
+  echo "        ./scripts/render-finance-ui.sh \${FINANCE_UI_TAG:-latest}   # then commit + push"
+fi
+
 # ---------------- Done ----------------
 
 echo ""
@@ -113,9 +143,9 @@ echo "      --from-literal=bot-token=\"xoxb-...\" \\"
 echo "      --from-literal=app-token=\"xapp-...\" \\"
 echo "      --from-literal=signing-secret=\"...\""
 echo ""
-echo "==> OPTIONAL: Render + push the finance-ui deployment (after the first terraform apply)"
-echo ""
-echo "    ./scripts/render-finance-ui.sh <image-tag>   # e.g. v0.9.7"
+echo "==> Finance-assistant secrets, session-router, and finance-ui were"
+echo "    bootstrapped automatically (set FINANCE_UI_TAG in .env to pin the"
+echo "    finance-ui image; defaults to 'latest')."
 echo ""
 echo "Outputs:"
 echo "  LiteLLM API key:       $(terraform output -raw litellm_api_key 2>/dev/null || echo '(not yet available)')"
