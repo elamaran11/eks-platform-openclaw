@@ -72,8 +72,22 @@ kubectl apply -f k8s/deployment.rendered.yaml
 The `SandboxTemplate`/`SandboxWarmPool`/EFS PVC are applied by ArgoCD
 (`gitops/apps/finance-assistant.yaml` include list).
 
+## Streaming + conversation history
+
+The adapter streams tokens from the openclaw gateway's OpenAI-compatible
+endpoint (`POST /v1/chat/completions` with `stream: true`, enabled via
+`gateway.http.endpoints.chatCompletions` in the SandboxTemplate config). It
+forwards each `delta.content` chunk to the browser the instant it arrives, so
+text renders progressively instead of appearing all at once after the full
+agentic loop. The router pipes those SSE bytes through verbatim.
+
+The gateway's agent path is **stateless** — it records the transcript but
+does not replay prior turns for a programmatic call, even with a stable
+session key (this matches the real OpenAI API). So the browser sends the full
+`messages[]` conversation each turn and the adapter forwards it; without that,
+every message looks like the start of a new conversation.
+
 ## Known follow-ups
 
-- **True token streaming** — the adapter still shells `openclaw agent --json` and emits the whole reply as one SSE delta. A WebSocket client to the gateway (`chat.send` / `deltaText`) would stream per-token. Tier-2.
 - **Image-baked router** instead of `npm install` at container start; the ConfigMap pattern matches the adapter, but a purpose-built image is faster and more auditable.
 - **JWKS verification** inside the router in case the ALB auth is ever removed; we currently trust `x-amzn-oidc-data` because the ALB signs it before forwarding.

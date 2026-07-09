@@ -145,7 +145,66 @@ spec:
               # provisions that user's openclaw agent. The gateway's default
               # agent workspace stays /workspace but is unused for user data.
               mkdir -p /home/node/.openclaw
-              LITELLM_API_KEY="${LITELLM_API_KEY}" GATEWAY_AUTH_TOKEN="${GATEWAY_AUTH_TOKEN}" python3 -c 'import json,os; prompt=open("/etc/openclaw/system-prompt.md").read(); cfg={"models":{"providers":{"litellm":{"baseUrl":"http://litellm.litellm.svc.cluster.local:4000","apiKey":os.environ["LITELLM_API_KEY"],"api":"openai-completions","models":[{"id":"claude-opus-4-6","name":"Claude Opus 4.6","reasoning":True,"input":["text","image"],"contextWindow":200000,"maxTokens":4096},{"id":"claude-haiku-4-5","name":"Claude Haiku 4.5","reasoning":True,"input":["text","image"],"contextWindow":200000,"maxTokens":3072}]}}},"agents":{"defaults":{"model":{"primary":"litellm/claude-opus-4-6","fallbacks":["litellm/claude-haiku-4-5"]},"workspace":"/workspace","systemPromptOverride":prompt,"skipBootstrap":True,"thinkingDefault":"off"}},"gateway":{"port":18789,"mode":"local","bind":"lan","auth":{"mode":"token","token":os.environ["GATEWAY_AUTH_TOKEN"]},"controlUi":{"dangerouslyAllowHostHeaderOriginFallback":True},"http":{"endpoints":{"chatCompletions":{"enabled":True}}}}}; json.dump(cfg,open("/home/node/.openclaw/openclaw.json","w"),indent=2)'
+              # Render openclaw.json with json.dump so the system prompt and
+              # secrets are always correctly escaped (never string-substituted).
+              # Spread across lines for readability; the output is unchanged.
+              python3 -c '
+              import json, os
+
+              prompt = open("/etc/openclaw/system-prompt.md").read()
+
+              cfg = {
+                  "models": {
+                      "providers": {
+                          "litellm": {
+                              "baseUrl": "http://litellm.litellm.svc.cluster.local:4000",
+                              "apiKey": os.environ["LITELLM_API_KEY"],
+                              "api": "openai-completions",
+                              "models": [
+                                  {
+                                      "id": "claude-opus-4-6",
+                                      "name": "Claude Opus 4.6",
+                                      "reasoning": True,
+                                      "input": ["text", "image"],
+                                      "contextWindow": 200000,
+                                      "maxTokens": 4096,
+                                  },
+                                  {
+                                      "id": "claude-haiku-4-5",
+                                      "name": "Claude Haiku 4.5",
+                                      "reasoning": True,
+                                      "input": ["text", "image"],
+                                      "contextWindow": 200000,
+                                      "maxTokens": 3072,
+                                  },
+                              ],
+                          }
+                      }
+                  },
+                  "agents": {
+                      "defaults": {
+                          "model": {
+                              "primary": "litellm/claude-opus-4-6",
+                              "fallbacks": ["litellm/claude-haiku-4-5"],
+                          },
+                          "workspace": "/workspace",
+                          "systemPromptOverride": prompt,
+                          "skipBootstrap": True,
+                          "thinkingDefault": "off",
+                      }
+                  },
+                  "gateway": {
+                      "port": 18789,
+                      "mode": "local",
+                      "bind": "lan",
+                      "auth": {"mode": "token", "token": os.environ["GATEWAY_AUTH_TOKEN"]},
+                      "controlUi": {"dangerouslyAllowHostHeaderOriginFallback": True},
+                      "http": {"endpoints": {"chatCompletions": {"enabled": True}}},
+                  },
+              }
+
+              json.dump(cfg, open("/home/node/.openclaw/openclaw.json", "w"), indent=2)
+              '
               unset LITELLM_API_KEY GATEWAY_AUTH_TOKEN
               exec node dist/index.js gateway --bind=lan --port 18789 --allow-unconfigured
           ports:
