@@ -127,7 +127,7 @@ function ensureAgent(suffix) {
 // --thinking off. Streamed chunks concatenate in arrival order, so the
 // multi-segment reply that the buffered path had to join by hand assembles
 // itself here — no truncation.
-function runOpenclaw(sessionId, message, suffix, onDelta) {
+function runOpenclaw(sessionId, messages, suffix, onDelta) {
   return new Promise((resolve, reject) => {
     const headers = {
       "Content-Type": "application/json",
@@ -138,10 +138,16 @@ function runOpenclaw(sessionId, message, suffix, onDelta) {
       headers["x-openclaw-agent-id"] = agentId(suffix);
       headers["x-openclaw-session-key"] = `agent:${agentId(suffix)}:${sessionId}`;
     }
+    // The gateway's OpenAI-compat endpoint is stateless (like the real
+    // OpenAI API): it records the transcript but does NOT replay prior
+    // turns for a programmatic call, even with a stable session key. So the
+    // caller must resend the conversation. We forward the full messages[]
+    // the browser holds; without this every turn looks like a brand-new
+    // conversation ("this is the start of our session").
     const payload = JSON.stringify({
       model: "openclaw",
       stream: true,
-      messages: [{ role: "user", content: message }],
+      messages,
     });
 
     const req = http.request(
@@ -218,10 +224,24 @@ const server = http.createServer(async (req, res) => {
     req.on("end", async () => {
       let heartbeat;
       try {
-        const { message, sessionId = "web", suffix } = JSON.parse(body || "{}");
-        if (!message || typeof message !== "string") {
+        const parsed = JSON.parse(body || "{}");
+        const { message, sessionId = "web", suffix } = parsed;
+        // Preferred shape: full conversation history in `messages` (so the
+        // stateless gateway can see prior turns). Legacy/smoke path: a single
+        // `message` string — wrap it as a one-message history. Sanitize to
+        // just {role, content} so nothing else in the client payload reaches
+        // the model.
+        const history = Array.isArray(parsed.messages)
+          ? parsed.messages
+              .filter((m) => m && typeof m.content === "string" && m.content !== "")
+              .map((m) => ({
+                role: m.role === "assistant" ? "assistant" : "user",
+                content: m.content,
+              }))
+          : (typeof message === "string" && message ? [{ role: "user", content: message }] : []);
+        if (history.length === 0) {
           res.writeHead(400, { "Content-Type": "application/json" });
-          return res.end(JSON.stringify({ error: "message required" }));
+          return res.end(JSON.stringify({ error: "message or messages required" }));
         }
         // A valid suffix routes to the user's dedicated agent. Absent or
         // malformed (e.g. legacy/smoke path) falls back to the default agent.
@@ -246,7 +266,7 @@ const server = http.createServer(async (req, res) => {
         // Bedrock round-trips); once tokens flow they keep it alive too, and
         // the `: ping` comments the client ignores are harmless alongside deltas.
         let sentDelta = false;
-        const { text, stopReason } = await runOpenclaw(sessionId, message, useSuffix, (piece) => {
+        const { text, stopReason } = await runOpenclaw(sessionId, history, useSuffix, (piece) => {
           sentDelta = true;
           sseWrite(res, { delta: piece });
         });

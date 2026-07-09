@@ -145,7 +145,16 @@ export default function Page() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: content, sessionId }),
+        // The gateway is stateless — it won't replay prior turns on its own,
+        // so we send the full conversation each time. `messages` here is the
+        // pre-append state (the setMessages above hasn't applied yet), so
+        // [...messages, userMsg] is the prior turns plus this new one, and
+        // deliberately excludes the empty assistant placeholder.
+        body: JSON.stringify({
+          messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
+          message: content,
+          sessionId,
+        }),
       });
       if (!res.body) throw new Error("no body");
       const reader = res.body.getReader();

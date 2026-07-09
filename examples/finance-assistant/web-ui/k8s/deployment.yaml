@@ -26,7 +26,7 @@ spec:
           # Image, Cognito values, and certificate ARN are substituted by
           # scripts/render-finance-ui.sh from terraform outputs.
           # The __PLACEHOLDERS__ below are NOT real values.
-          image: 259732043995.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.9.7
+          image: 259732043995.dkr.ecr.us-west-2.amazonaws.com/finance-ui:v0.9.8
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
