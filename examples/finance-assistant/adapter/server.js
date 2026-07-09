@@ -25,6 +25,12 @@ const { spawn } = require("child_process");
 
 const PORT = parseInt(process.env.PORT || "18790", 10);
 const OPENCLAW_CMD = process.env.OPENCLAW_CMD || "openclaw";
+// The gateway reads its config/agents from /home/node/.openclaw (a shared
+// emptyDir mounted in both containers). `agents add` and `agent --agent`
+// MUST run with this HOME so the add lands in the config the running
+// gateway hot-reloads — otherwise --agent silently falls back to the
+// shared `main` agent and per-user routing breaks.
+const OPENCLAW_HOME = process.env.OPENCLAW_HOME || "/home/node";
 const rawArgs = process.env.OPENCLAW_ARGS || "";
 const OPENCLAW_ARGS = rawArgs.trim() ? rawArgs.trim().split(/\s+/) : [];
 // 15 min. Cold-start on a fresh per-user sandbox installs openclaw's
@@ -72,7 +78,7 @@ function provisionAgent(suffix) {
     const args = [...OPENCLAW_ARGS, "agents", "add", agentId(suffix),
       "--workspace", ws, "--non-interactive"];
     const child = spawn(OPENCLAW_CMD, args, {
-      env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: process.env.NODE_ENV || "production" },
+      env: { PATH: process.env.PATH, HOME: OPENCLAW_HOME, NODE_ENV: process.env.NODE_ENV || "production" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
@@ -114,7 +120,7 @@ function runOpenclaw(sessionId, message, suffix) {
       // file the gateway container wrote.
       env: {
         PATH: process.env.PATH,
-        HOME: process.env.HOME,
+        HOME: OPENCLAW_HOME,
         NODE_ENV: process.env.NODE_ENV || "production",
       },
       stdio: ["ignore", "pipe", "pipe"],
