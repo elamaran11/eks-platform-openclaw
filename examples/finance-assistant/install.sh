@@ -72,8 +72,9 @@ fi
 echo "==> Rendering + applying the session-router"
 bash "${SCRIPT_DIR}/session-router/render.sh"
 kubectl -n "$NS" apply -f "${SCRIPT_DIR}/session-router/k8s/deployment.rendered.yaml"
-kubectl -n "$NS" apply -f "${SCRIPT_DIR}/session-router/k8s/reaper-cronjob.yaml"
-kubectl -n "$NS" apply -f "${SCRIPT_DIR}/session-router/sandbox-template-configmap.yaml"
+# Idle teardown is now the SandboxClaim's sliding lifecycle lease (managed
+# by the router), not a CronJob. The SandboxTemplate/WarmPool/shared-EFS
+# CRs are applied by ArgoCD (see gitops/apps/finance-assistant.yaml).
 
 echo "==> Done. Commit the Argo Applications and ArgoCD will pick up the rest."
 echo "   gitops/apps/finance-assistant.yaml already points at examples/finance-assistant."

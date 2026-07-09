@@ -10,16 +10,14 @@ metadata:
   name: finance-session-router
   namespace: finance-assistant
 rules:
-  # Narrow: only the three resources the router needs, only in this ns.
-  # Nothing about secrets, pods/exec, or cluster-scoped objects.
+  # Narrow: create/renew the per-user SandboxClaim, and read the bound
+  # Sandbox to get its serviceFQDN. No secrets, pods/exec, Services, PVCs,
+  # or cluster-scoped objects — the controller owns all of that now.
+  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources: ["sandboxclaims"]
+    verbs: ["get", "list", "create", "patch", "delete"]
   - apiGroups: ["agents.x-k8s.io"]
     resources: ["sandboxes"]
-    verbs: ["get", "list", "create", "patch", "delete"]
-  - apiGroups: [""]
-    resources: ["services", "persistentvolumeclaims"]
-    verbs: ["get", "list", "create", "delete"]
-  - apiGroups: [""]
-    resources: ["pods"]
     verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -82,8 +80,8 @@ spec:
               value: "18790"
             - name: NAMESPACE
               value: finance-assistant
-            - name: SANDBOX_TEMPLATE
-              value: /etc/router/sandbox-template.json
+            - name: WARM_POOL
+              value: finance
             - name: IDLE_TTL_SECONDS
               value: "1800"
             - name: SANDBOX_READY_TIMEOUT_MS
@@ -110,7 +108,6 @@ spec:
             capabilities: { drop: [ALL] }
           volumeMounts:
             - { name: src,      mountPath: /src, readOnly: true }
-            - { name: template, mountPath: /etc/router }
             - { name: tmp,      mountPath: /tmp }
           readinessProbe:
             httpGet: { path: /healthz, port: 18790 }
@@ -128,12 +125,6 @@ spec:
                   name: finance-session-router-src
               - configMap:
                   name: finance-session-router-pkg
-        - name: template
-          configMap:
-            name: finance-sandbox-template
-            items:
-              - key: sandbox-template.json
-                path: sandbox-template.json
         - name: tmp
           emptyDir: {}
 ---

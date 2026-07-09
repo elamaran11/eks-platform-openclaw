@@ -6,7 +6,8 @@ metadata:
 data:
   server.js: |
     // Adapter sidecar — injected via ConfigMap; lives in the same Kata VM
-    // as the openclaw gateway. Calls `openclaw agent --local` per turn.
+    // as the openclaw gateway. Calls the warm local gateway via `openclaw
+    // agent` per turn, targeting the user's per-user agent.
 
     // Log redactor: belt-and-braces scrub of stdout/stderr for secret-
     // shaped strings. Primary defense is still tmpfs-mounted secrets +
@@ -39,12 +40,16 @@ data:
     const OPENCLAW_CMD = process.env.OPENCLAW_CMD || "openclaw";
     const rawArgs = process.env.OPENCLAW_ARGS || "";
     const OPENCLAW_ARGS = rawArgs.trim() ? rawArgs.trim().split(/\s+/) : [];
-    const SYSTEM_PROMPT_FILE = process.env.SYSTEM_PROMPT_FILE || "/etc/openclaw/system-prompt.md";
     // 15 min. Cold-start on a fresh per-user sandbox installs openclaw's
     // bundled plugins (amazon-bedrock SDK, acpx, etc.) before the first
     // response; that can take 60-120s on top of normal LLM time. Short
     // timeouts truncate the response and make the UI look frozen.
     const DEFAULT_TIMEOUT_MS = parseInt(process.env.ADAPTER_TIMEOUT_MS || "900000", 10);
+    // Shared EFS root; each user gets /workspace/users/<suffix>.
+    const WORKSPACE_ROOT = process.env.WORKSPACE_DIR || "/workspace";
+    // Suffix is a 10-hex-char hash from the router. Validate defensively so
+    // it can never escape the users/ dir or inject shell/flag args.
+    const SUFFIX_RE = /^[a-z0-9]{1,32}$/;
 
     // Secrets are tmpfs-mounted as files, not env vars. Read at startup
     // and drop from env so any downstream `env` dump leaks nothing.
@@ -54,24 +59,62 @@ data:
     delete process.env.LITELLM_API_KEY;
     delete process.env.GATEWAY_AUTH_TOKEN;
 
-    // System prompt is no longer injected per-turn — it lives in
-    // /workspace/BOOT.md and is loaded into the gateway on startup by the
-    // openclaw boot-md hook. Adapter sends only the user message.
-    const primedSessions = new Set(); // retained for future use
+    function agentId(suffix) { return `pod-agent-${suffix}`; }
+    function userWorkspace(suffix) { return `${WORKSPACE_ROOT}/users/${suffix}`; }
 
-    function runOpenclaw(sessionId, message) {
+    // Per-user agent provisioning is idempotent + deduped. `provisioned`
+    // caches suffixes added this gateway lifetime; `inflight` shares one
+    // promise so two concurrent first-hits don't double-add.
+    const provisioned = new Set();
+    const inflight = new Map();
+
+    // Provision (or heal) the user's openclaw agent. Pre-creating the
+    // workspace dir makes `agents add`'s own mkdir a no-op — sidestepping
+    // its non-atomic config-then-mkdir behavior and any EFS uid surprise.
+    function provisionAgent(suffix) {
+      return new Promise((resolve, reject) => {
+        const ws = userWorkspace(suffix);
+        try { fs.mkdirSync(ws, { recursive: true }); }
+        catch (e) { return reject(new Error(`workspace mkdir failed: ${e.message}`)); }
+        const args = [...OPENCLAW_ARGS, "agents", "add", agentId(suffix),
+          "--workspace", ws, "--non-interactive"];
+        const child = spawn(OPENCLAW_CMD, args, {
+          env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: process.env.NODE_ENV || "production" },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let out = "";
+        child.stdout.on("data", (d) => { out += d.toString(); });
+        child.stderr.on("data", (d) => { out += d.toString(); });
+        child.on("close", (code) => {
+          // Idempotent: re-add of an existing agent is success.
+          if (code === 0 || /already exists/i.test(out)) return resolve();
+          console.error(`[adapter] agents add exit ${code}: ${out.slice(0, 300)}`);
+          reject(new Error(`agents add failed (exit ${code})`));
+        });
+      });
+    }
+
+    function ensureAgent(suffix) {
+      if (provisioned.has(suffix)) return Promise.resolve();
+      const existing = inflight.get(suffix);
+      if (existing) return existing;
+      const p = provisionAgent(suffix)
+        .then(() => { provisioned.add(suffix); })
+        .finally(() => { inflight.delete(suffix); });
+      inflight.set(suffix, p);
+      return p;
+    }
+
+    function runOpenclaw(sessionId, message, suffix) {
       return new Promise((resolve, reject) => {
         // Use warm gateway (omit --local) so we skip the agent cold start.
-        const args = [
-          ...OPENCLAW_ARGS,
-          "agent",
-          "--session-id", sessionId,
-          "--thinking", "off",
-          "--json",
-          "-m", message,
-        ];
+        // --agent targets the user's dedicated agent (overrides routing
+        // bindings) so the turn uses that user's workspace subdir.
+        const args = [...OPENCLAW_ARGS, "agent"];
+        if (suffix) args.push("--agent", agentId(suffix));
+        args.push("--session-id", sessionId, "--thinking", "off", "--json", "-m", message);
         const child = spawn(OPENCLAW_CMD, args, {
-          env: { ...process.env },
+          env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: process.env.NODE_ENV || "production" },
           stdio: ["ignore", "pipe", "pipe"],
         });
 
@@ -86,9 +129,7 @@ data:
         child.stderr.on("data", (d) => { stderr += d.toString(); });
         child.on("close", (code) => {
           clearTimeout(timer);
-          // Try stdout first (warm gateway path), then stderr (--local path).
           // Warm path: {result:{payloads:[{text}]},status:"ok"}
-          // --local:   {payloads:[{text}],meta:{...}}
           const candidates = [stdout, stderr];
           for (const src of candidates) {
             const jsonStart = src.indexOf("{\n");
@@ -137,13 +178,14 @@ data:
         req.on("end", async () => {
           let heartbeat;
           try {
-            const { message, sessionId = "web" } = JSON.parse(body || "{}");
+            const { message, sessionId = "web", suffix } = JSON.parse(body || "{}");
             if (!message) {
               res.writeHead(400, { "Content-Type": "application/json" });
               return res.end(JSON.stringify({ error: "message required" }));
             }
-            let payload = message;
-            // System prompt is in BOOT.md; don't prepend on every turn.
+            // A valid suffix routes to the user's dedicated agent. Absent or
+            // malformed (legacy/smoke path) falls back to the default agent.
+            const useSuffix = typeof suffix === "string" && SUFFIX_RE.test(suffix) ? suffix : null;
             res.writeHead(200, {
               "Content-Type": "text/event-stream",
               "Cache-Control": "no-cache, no-transform",
@@ -157,7 +199,10 @@ data:
               try { res.write(": ping\n\n"); } catch {}
             }, 10000);
 
-            const { text, stopReason } = await runOpenclaw(sessionId, payload);
+            // Provision the per-user agent on first interaction (idempotent).
+            if (useSuffix) await ensureAgent(useSuffix);
+
+            const { text, stopReason } = await runOpenclaw(sessionId, message, useSuffix);
             clearInterval(heartbeat);
             if (stopReason === "error" || !text) {
               sseWrite(res, { error: text || "agent error", stopReason });

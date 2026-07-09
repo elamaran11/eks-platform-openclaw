@@ -1,15 +1,55 @@
+# Declarative sandbox provisioning (agent-sandbox v0.5.0, v1beta1).
+#
+# Replaces the imperative session-router flow (deep-clone a template
+# ConfigMap + kubectl-create a per-user Sandbox/PVC/Service). Now:
+#   - ONE SandboxTemplate describes the pod spec (identical for every pod,
+#     which is what lets the warm pool pre-bind without a cold start).
+#   - ONE SandboxWarmPool keeps a warm buffer of replicas.
+#   - The session-router creates ONE SandboxClaim per user; the controller
+#     binds it to a warm sandbox (fast) or cold-creates one (empty pool).
+#
+# Per-user isolation/persistence is handled INSIDE the pod by openclaw's
+# dynamic multi-agent feature: the adapter runs `openclaw agents add
+# pod-agent-<suffix> --workspace /workspace/users/<suffix>` on first use.
+# Each user's files live in their own subdir on the shared EFS volume,
+# which survives claim teardown. The pod spec stays byte-identical across
+# all warm pods (required for warm-bind).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: finance-sandbox
   namespace: finance-assistant
 ---
-apiVersion: agents.x-k8s.io/v1alpha1
-kind: Sandbox
+# One shared RWX EFS volume, mounted at /workspace in every sandbox. Each
+# user gets a /workspace/users/<suffix> subdir (created by the adapter).
+# Lives OUTSIDE the claim/sandbox lifecycle, so user files survive when a
+# claim is torn down for idleness. The access point / mount must be
+# writable by uid 1000 so the adapter can mkdir the per-user subdir.
+apiVersion: v1
+kind: PersistentVolumeClaim
 metadata:
-  name: finance-assistant
+  name: finance-shared-efs
   namespace: finance-assistant
 spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: efs-workspaces
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: finance-sandbox
+  namespace: finance-assistant
+spec:
+  # Controller creates a Service per bound sandbox; the router proxies to
+  # its status.serviceFQDN. Replaces the old static finance-sandbox Service.
+  service: true
+  # We keep the hand-written networkpolicy.yaml (which scopes ingress to
+  # the session-router). Do NOT let the controller manage a NetworkPolicy
+  # that would scope ingress to the upstream sandbox-router we don't run.
+  networkPolicyManagement: Unmanaged
   podTemplate:
     metadata:
       labels:
@@ -27,8 +67,6 @@ spec:
           type: RuntimeDefault
       nodeSelector:
         # Pin to the kata-NESTED pool specifically (node-type is unique to it).
-        # NOT kata-enabled (on both nested+metal) and NOT katacontainers.io/kata-runtime
-        # (kata-deploy's post-install signal, gated by the startup taint).
         node-type: kata-nested
       tolerations:
         - key: kata
@@ -36,9 +74,11 @@ spec:
           value: "true"
           effect: NoSchedule
       volumes:
+        # Shared EFS instead of a per-user emptyDir/PVC. Per-user subdirs
+        # under /workspace/users/<suffix> give each user durable state.
         - name: workspace
-          emptyDir:
-            sizeLimit: 2Gi
+          persistentVolumeClaim:
+            claimName: finance-shared-efs
         - name: system-prompt
           configMap:
             name: finance-system-prompt
@@ -51,8 +91,7 @@ spec:
         - name: adapter-tmp
           emptyDir: {}
         # Tmpfs-backed secret mounts with mode 0400. Keeps keys out of env
-        # so an `env` dump through the agent can't leak them, and out of
-        # etcd-disk paths on node. Projected per-container below.
+        # and out of etcd-disk node paths.
         - name: secrets
           projected:
             defaultMode: 0400
@@ -96,66 +135,19 @@ spec:
             - -c
             - |
               set -eu
-              # Secrets come from tmpfs files mounted at /var/run/openclaw,
-              # not env vars. They live in shell locals only long enough to
-              # render openclaw.json; a `env` dump via the agent shows
-              # nothing useful.
+              # Secrets come from tmpfs files, not env vars — live in shell
+              # locals only long enough to render openclaw.json.
               LITELLM_API_KEY=$(cat /var/run/openclaw/litellm-api-key)
               GATEWAY_AUTH_TOKEN=$(cat /var/run/openclaw/gateway-auth-token)
-              mkdir -p /workspace/scenarios /workspace/inbox
-              [ -f /workspace/goals.md ]    || touch /workspace/goals.md
-              [ -f /workspace/snapshot.md ] || touch /workspace/snapshot.md
-              [ -f /workspace/decisions.md ] || touch /workspace/decisions.md
-              [ -f /workspace/questions.md ] || touch /workspace/questions.md
-              # boot-md hook will load this into the agent on gateway startup,
-              # so the finance persona is injected once per gateway life, not
-              # per turn. Refresh on every restart in case the ConfigMap changed.
-              cp /etc/openclaw/system-prompt.md /workspace/BOOT.md
-              cat > /home/node/.openclaw/openclaw.json <<EOF
-              {
-                "models": {
-                  "providers": {
-                    "litellm": {
-                      "baseUrl": "http://litellm.litellm.svc.cluster.local:4000",
-                      "apiKey": "${LITELLM_API_KEY}",
-                      "api": "openai-completions",
-                      "models": [
-                        {
-                          "id": "claude-haiku-4-5",
-                          "name": "Claude Haiku 4.5 (Bedrock)",
-                          "reasoning": true,
-                          "input": ["text", "image"],
-                          "contextWindow": 200000,
-                          "maxTokens": 3072
-                        }
-                      ]
-                    }
-                  }
-                },
-                "agents": {
-                  "defaults": {
-                    "model": { "primary": "litellm/claude-haiku-4-5" },
-                    "workspace": "/workspace"
-                  }
-                },
-                "gateway": {
-                  "port": 18789,
-                  "mode": "local",
-                  "bind": "lan",
-                  "auth": {
-                    "mode": "token",
-                    "token": "${GATEWAY_AUTH_TOKEN}"
-                  },
-                  "controlUi": {
-                    "dangerouslyAllowHostHeaderOriginFallback": true
-                  }
-                }
-              }
-              EOF
-              # Drop the locals before exec — the openclaw gateway reads
-              # the rendered config file, not env.
+              # NOTE: no per-user /workspace scaffolding here. /workspace is
+              # now a SHARED EFS root; per-user files live under
+              # /workspace/users/<suffix>, created by the adapter when it
+              # provisions that user's openclaw agent. The gateway's default
+              # agent workspace stays /workspace but is unused for user data.
+              mkdir -p /home/node/.openclaw
+              LITELLM_API_KEY="${LITELLM_API_KEY}" GATEWAY_AUTH_TOKEN="${GATEWAY_AUTH_TOKEN}" python3 -c 'import json,os; prompt=open("/etc/openclaw/system-prompt.md").read(); cfg={"models":{"providers":{"litellm":{"baseUrl":"http://litellm.litellm.svc.cluster.local:4000","apiKey":os.environ["LITELLM_API_KEY"],"api":"openai-completions","models":[{"id":"claude-opus-4-6","name":"Claude Opus 4.6","reasoning":True,"input":["text","image"],"contextWindow":200000,"maxTokens":4096},{"id":"claude-haiku-4-5","name":"Claude Haiku 4.5","reasoning":True,"input":["text","image"],"contextWindow":200000,"maxTokens":3072}]}}},"agents":{"defaults":{"model":{"primary":"litellm/claude-opus-4-6","fallbacks":["litellm/claude-haiku-4-5"]},"workspace":"/workspace","systemPromptOverride":prompt,"skipBootstrap":True}},"gateway":{"port":18789,"mode":"local","bind":"lan","auth":{"mode":"token","token":os.environ["GATEWAY_AUTH_TOKEN"]},"controlUi":{"dangerouslyAllowHostHeaderOriginFallback":True}}}; json.dump(cfg,open("/home/node/.openclaw/openclaw.json","w"),indent=2)'
               unset LITELLM_API_KEY GATEWAY_AUTH_TOKEN
-              exec node dist/index.js gateway --bind=lan --port 18789 --allow-unconfigured --verbose
+              exec node dist/index.js gateway --bind=lan --port 18789 --allow-unconfigured
           ports:
             - name: gateway
               containerPort: 18789
@@ -199,14 +191,14 @@ spec:
             - sh
             - -c
             - |
-              # Wait for openclaw sidecar to have written its config
+              # Wait for the openclaw sidecar to write its config.
               for i in $(seq 1 60); do
                 [ -f /home/node/.openclaw/openclaw.json ] && break
                 sleep 1
               done
               mkdir -p "$HOME/.openclaw"
-              # Reuse the openclaw sibling config so both containers talk
-              # to the same agent, same workspace, same auth.
+              # Reuse the openclaw sibling config so the adapter's `openclaw`
+              # CLI talks to the same local gateway, auth, and models.
               cp /home/node/.openclaw/openclaw.json "$HOME/.openclaw/openclaw.json"
               exec node /adapter/server.js
           ports:
@@ -217,9 +209,6 @@ spec:
             - { name: openclaw-config, mountPath: /home/node/.openclaw }
             - { name: adapter-src,     mountPath: /adapter, readOnly: true }
             - { name: adapter-tmp,     mountPath: /tmp/adapter-home }
-            # Adapter reads secrets via the same tmpfs file path; if ever
-            # spawning a subprocess, log-redact scrubs stdout/stderr as
-            # belt-and-braces.
             - { name: secrets,         mountPath: /var/run/openclaw, readOnly: true }
           readinessProbe:
             httpGet: { path: /healthz, port: 18790 }
@@ -230,18 +219,14 @@ spec:
             initialDelaySeconds: 20
             periodSeconds: 30
 ---
-apiVersion: v1
-kind: Service
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxWarmPool
 metadata:
-  name: finance-sandbox
+  name: finance
   namespace: finance-assistant
 spec:
-  selector:
-    app: finance-sandbox
-  ports:
-    - name: gateway
-      port: 18789
-      targetPort: 18789
-    - name: adapter
-      port: 18790
-      targetPort: 18790
+  # One warm buffer. When a claim binds the warm sandbox, the pool
+  # replenishes a fresh one. No KEDA/autoscaling.
+  replicas: 1
+  sandboxTemplateRef:
+    name: finance-sandbox
