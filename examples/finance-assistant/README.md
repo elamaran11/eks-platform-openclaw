@@ -197,7 +197,7 @@ curl -sk -X POST https://<finance_ui_host>/api/auth/signup \
 #  → {"error":"Signup is restricted to @amazon.com email addresses...","code":"UserLambdaValidationException"}
 
 # 3. Your per-user sandbox exists
-kubectl -n finance-assistant get sandbox.agents.x-k8s.io -l finance.x-k8s.io/user-suffix
+kubectl -n finance-assistant get sandbox.agents.x-k8s.io -l sandbox.users.io/user-suffix
 ```
 
 ### Three @amazon.com fences
@@ -213,7 +213,7 @@ kubectl -n finance-assistant get sandbox.agents.x-k8s.io -l finance.x-k8s.io/use
 **Change the system prompt** — edit `system-prompt-configmap.yaml`, commit, push. For existing users to pick it up, evict their sandboxes so they re-provision with the new ConfigMap mounted:
 
 ```bash
-kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l finance.x-k8s.io/user-suffix
+kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l sandbox.users.io/user-suffix
 ```
 
 EFS workspaces survive the eviction; chat history resumes on the next sign-in.
@@ -222,7 +222,7 @@ EFS workspaces survive the eviction; chat history resumes on the next sign-in.
 
 ```bash
 kubectl apply -f examples/finance-assistant/sandbox-template.yaml
-kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l finance.x-k8s.io/user-suffix
+kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l sandbox.users.io/user-suffix
 ```
 
 **Teardown just the finance-assistant app** (leave the rest of the platform up):

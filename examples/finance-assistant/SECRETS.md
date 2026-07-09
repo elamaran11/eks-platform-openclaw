@@ -43,7 +43,7 @@ When a secret is (or might be) leaked:
    kubectl -n finance-assistant patch secret openclaw-gateway-auth \
      --type merge -p "{\"stringData\":{\"token\":\"$NEW_TOKEN\"}}"
    kubectl -n finance-assistant rollout restart deploy/finance-session-router
-   kubectl -n finance-assistant delete sandbox -l finance.x-k8s.io/user-suffix
+   kubectl -n finance-assistant delete sandbox -l sandbox.users.io/user-suffix
    ```
 
 3. **Purge logs.**

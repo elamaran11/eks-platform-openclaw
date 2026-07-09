@@ -38,7 +38,7 @@ const IDLE_TTL_SECONDS = parseInt(process.env.IDLE_TTL_SECONDS || "1800", 10);
 // shared sandbox. Smoke-tests the SSE proxy path.
 const READ_ONLY = process.env.ROUTER_READ_ONLY === "true";
 const LEGACY_BACKEND = process.env.LEGACY_BACKEND || "finance-sandbox.finance-assistant.svc.cluster.local";
-const USER_LABEL = "finance.x-k8s.io/user-suffix";
+const USER_LABEL = "sandbox.users.io/user-suffix";
 
 // ALB verifies the Cognito JWT and signs x-amzn-oidc-data before
 // forwarding. We rely on that upstream verification; if you relocate this

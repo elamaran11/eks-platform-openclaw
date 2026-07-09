@@ -33,7 +33,7 @@ The `SandboxTemplate`, `SandboxWarmPool`, and shared EFS PVC live in
 - Router is the only tenant-aware Kubernetes process. Holds **no LLM key, no Bedrock creds**.
 - Router's RBAC is scoped to `sandboxclaims` (CRUD) + `sandboxes` (read) in one namespace. No secrets access, no pod/exec, no Services/PVCs, no cluster scope.
 - Each user gets their own kata-qemu VM (one sandbox per claim); inside it, a dedicated openclaw agent rooted at `/workspace/users/<suffix>`.
-- NetworkPolicy: only the router can reach a bound sandbox on :18790 (keyed on the `finance.x-k8s.io/user-suffix` label the claim stamps via `additionalPodMetadata`). Direct UI→sandbox blocked.
+- NetworkPolicy: only the router can reach a bound sandbox on :18790 (keyed on the `sandbox.users.io/user-suffix` label the claim stamps via `additionalPodMetadata`). Direct UI→sandbox blocked.
 - The claim's `sub-hash` annotation stores a **hash** of the sub, not the sub itself — debuggable without PII.
 
 ## Request flow
