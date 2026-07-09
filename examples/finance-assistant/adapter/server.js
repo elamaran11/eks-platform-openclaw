@@ -33,6 +33,13 @@ const OPENCLAW_CMD = process.env.OPENCLAW_CMD || "openclaw";
 const OPENCLAW_HOME = process.env.OPENCLAW_HOME || "/home/node";
 const rawArgs = process.env.OPENCLAW_ARGS || "";
 const OPENCLAW_ARGS = rawArgs.trim() ? rawArgs.trim().split(/\s+/) : [];
+// The warm gateway serves an OpenAI-compatible streaming endpoint at
+// /v1/chat/completions (enabled via gateway.http.endpoints.chatCompletions
+// in the SandboxTemplate config). We stream from it so tokens reach the
+// browser as they're produced instead of buffering the whole reply. Same
+// pod, same Kata VM — loopback is fine.
+const GATEWAY_HOST = process.env.GATEWAY_HOST || "127.0.0.1";
+const GATEWAY_PORT = parseInt(process.env.GATEWAY_PORT || "18789", 10);
 // 15 min. Cold-start on a fresh per-user sandbox installs openclaw's
 // bundled plugins (amazon-bedrock SDK, acpx, etc.) before the first
 // response; that can take 60-120s on top of normal LLM time. Short
@@ -105,83 +112,98 @@ function ensureAgent(suffix) {
   return p;
 }
 
-function runOpenclaw(sessionId, message, suffix) {
+// Stream a turn from the warm gateway's OpenAI-compatible endpoint. Each
+// `choices[0].delta.content` chunk is handed to onDelta the instant it
+// arrives, so the browser renders tokens live instead of waiting for the
+// whole agentic loop. Targeting:
+//   - x-openclaw-agent-id  -> the user's per-user agent (routing/isolation);
+//     absent for the legacy/smoke path, which falls back to the default agent.
+//   - x-openclaw-session-key `agent:<agentId>:<sessionId>` preserves the
+//     server-side session continuity the CLI got from --agent + --session-id.
+//   - Bearer <gateway-auth-token> — token auth = owner scope on this endpoint.
+//     The token is read from the tmpfs secret file at startup (never an env var).
+// Thinking is forced off via the config's agents.defaults.thinkingDefault
+// (the endpoint has no per-request thinking control), matching the old
+// --thinking off. Streamed chunks concatenate in arrival order, so the
+// multi-segment reply that the buffered path had to join by hand assembles
+// itself here — no truncation.
+function runOpenclaw(sessionId, message, suffix, onDelta) {
   return new Promise((resolve, reject) => {
-    // No --local: call the already-warm gateway instead of cold-starting
-    // a fresh agent process per turn. --agent targets the user's agent
-    // (overrides routing bindings), so the turn reads/writes that user's
-    // workspace subdir.
-    const args = [...OPENCLAW_ARGS, "agent"];
-    if (suffix) args.push("--agent", agentId(suffix));
-    args.push("--session-id", sessionId, "--thinking", "off", "--json", "-m", message);
-    const child = spawn(OPENCLAW_CMD, args, {
-      // Minimal env: only what the openclaw CLI actually needs. Secrets
-      // are deliberately excluded — the CLI reads them from its config
-      // file the gateway container wrote.
-      env: {
-        PATH: process.env.PATH,
-        HOME: OPENCLAW_HOME,
-        NODE_ENV: process.env.NODE_ENV || "production",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
+    const headers = {
+      "Content-Type": "application/json",
+      "Accept": "text/event-stream",
+    };
+    if (GATEWAY_AUTH_TOKEN) headers["Authorization"] = `Bearer ${GATEWAY_AUTH_TOKEN}`;
+    if (suffix) {
+      headers["x-openclaw-agent-id"] = agentId(suffix);
+      headers["x-openclaw-session-key"] = `agent:${agentId(suffix)}:${sessionId}`;
+    }
+    const payload = JSON.stringify({
+      model: "openclaw",
+      stream: true,
+      messages: [{ role: "user", content: message }],
     });
 
-    let stdout = "";
-    let stderr = "";
+    const req = http.request(
+      { host: GATEWAY_HOST, port: GATEWAY_PORT, path: "/v1/chat/completions", method: "POST", headers },
+      (up) => {
+        if (up.statusCode !== 200) {
+          let body = "";
+          up.on("data", (d) => { body += d.toString(); });
+          up.on("end", () => reject(new Error(`gateway ${up.statusCode}: ${body.slice(0, 300)}`)));
+          return;
+        }
+        let buf = "";
+        let text = "";
+        let stopReason = "unknown";
+        up.setEncoding("utf8");
+        up.on("data", (chunk) => {
+          buf += chunk;
+          let idx;
+          // SSE frames are `\n\n`-delimited; keep any partial trailing frame.
+          while ((idx = buf.indexOf("\n\n")) >= 0) {
+            const frame = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            const line = frame.trim();
+            if (!line.startsWith("data:")) continue;
+            const data = line.slice(5).trim();
+            if (data === "[DONE]") continue;
+            try {
+              const evt = JSON.parse(data);
+              const choice = evt?.choices?.[0];
+              const piece = choice?.delta?.content;
+              if (piece) {
+                text += piece;
+                try { onDelta?.(piece); } catch {}
+              }
+              if (choice?.finish_reason) stopReason = choice.finish_reason;
+              if (evt?.error) {
+                stopReason = "error";
+                text = text || (evt.error.message ?? String(evt.error));
+              }
+            } catch { /* ignore keep-alive comments / partial frames */ }
+          }
+        });
+        up.on("end", () => {
+          clearTimeout(timer);
+          resolve({ text, stopReason });
+        });
+        up.on("error", (e) => { clearTimeout(timer); reject(e); });
+      },
+    );
+
     const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error(`openclaw timeout after ${DEFAULT_TIMEOUT_MS}ms`));
+      req.destroy(new Error(`gateway stream timeout after ${DEFAULT_TIMEOUT_MS}ms`));
     }, DEFAULT_TIMEOUT_MS);
 
-    child.stdout.on("data", (d) => { stdout += d.toString(); });
-    child.stderr.on("data", (d) => { stderr += d.toString(); });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      const candidates = [stdout, stderr];
-      for (const src of candidates) {
-        const jsonStart = src.indexOf("{\n");
-        if (jsonStart < 0) continue;
-        try {
-          const parsed = JSON.parse(src.slice(jsonStart));
-          const payloads = parsed?.result?.payloads ?? parsed?.payloads;
-          if (!payloads) continue;
-          // A multi-step agentic turn (tool calls, self-correction)
-          // returns ONE payload per text segment. Concatenate them all —
-          // reading only payloads[0] drops everything after the first
-          // block and truncates the reply.
-          const text = (Array.isArray(payloads) ? payloads : [payloads])
-            .map((pl) => pl?.text ?? "")
-            .filter(Boolean)
-            .join("\n\n");
-          const stopReason = parsed?.result?.meta?.stopReason
-            ?? parsed?.meta?.stopReason
-            ?? parsed?.status
-            ?? "unknown";
-          return resolve({ text, stopReason, parsed });
-        } catch { continue; }
-      }
-      console.error(`[adapter] openclaw exit ${code}`);
-      console.error(`[adapter] stdout(${stdout.length}):`, stdout.slice(0, 500));
-      console.error(`[adapter] stderr(${stderr.length}):`, stderr.slice(0, 500));
-      reject(new Error(`openclaw exit ${code}; stdout=${stdout.length}B stderr=${stderr.length}B`));
-    });
+    req.on("error", (e) => { clearTimeout(timer); reject(e); });
+    req.write(payload);
+    req.end();
   });
 }
 
 function sseWrite(res, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
-}
-
-async function streamReplyAsSse(res, text) {
-  // openclaw currently returns the whole reply synchronously, so there is
-  // no token stream to forward. Emit the full text as one SSE delta — the
-  // previous code chopped it into 6-char chunks with 12ms sleeps between
-  // them, which added ~2s of pointless latency *after* the model was done.
-  // True per-token streaming is a follow-up (needs the openclaw WS client).
-  sseWrite(res, { delta: text });
-  sseWrite(res, { done: true });
-  res.write("data: [DONE]\n\n");
-  res.end();
 }
 
 const server = http.createServer(async (req, res) => {
@@ -219,14 +241,29 @@ const server = http.createServer(async (req, res) => {
         // Provision the per-user agent on first interaction (idempotent).
         if (useSuffix) await ensureAgent(useSuffix);
 
-        const { text, stopReason } = await runOpenclaw(sessionId, message, useSuffix);
+        // Forward each token the instant it arrives. The heartbeat keeps
+        // the ALB stream alive across the initial pre-first-token gap (the
+        // Bedrock round-trips); once tokens flow they keep it alive too, and
+        // the `: ping` comments the client ignores are harmless alongside deltas.
+        let sentDelta = false;
+        const { text, stopReason } = await runOpenclaw(sessionId, message, useSuffix, (piece) => {
+          sentDelta = true;
+          sseWrite(res, { delta: piece });
+        });
         clearInterval(heartbeat);
-        if (stopReason === "error" || !text) {
-          sseWrite(res, { error: text || "agent error", stopReason });
-          res.write("data: [DONE]\n\n");
-          return res.end();
+        if (!sentDelta) {
+          // Nothing streamed: an error or an empty reply. Preserve the old
+          // one-shot behavior — surface the error, or emit any final text once.
+          if (stopReason === "error" || !text) {
+            sseWrite(res, { error: text || "agent error", stopReason });
+            res.write("data: [DONE]\n\n");
+            return res.end();
+          }
+          sseWrite(res, { delta: text });
         }
-        await streamReplyAsSse(res, text);
+        sseWrite(res, { done: true });
+        res.write("data: [DONE]\n\n");
+        res.end();
       } catch (e) {
         clearInterval(heartbeat);
         console.error("[adapter] error:", e.message);
