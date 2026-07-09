@@ -145,7 +145,14 @@ function runOpenclaw(sessionId, message, suffix) {
           const parsed = JSON.parse(src.slice(jsonStart));
           const payloads = parsed?.result?.payloads ?? parsed?.payloads;
           if (!payloads) continue;
-          const text = payloads?.[0]?.text ?? "";
+          // A multi-step agentic turn (tool calls, self-correction)
+          // returns ONE payload per text segment. Concatenate them all —
+          // reading only payloads[0] drops everything after the first
+          // block and truncates the reply.
+          const text = (Array.isArray(payloads) ? payloads : [payloads])
+            .map((pl) => pl?.text ?? "")
+            .filter(Boolean)
+            .join("\n\n");
           const stopReason = parsed?.result?.meta?.stopReason
             ?? parsed?.meta?.stopReason
             ?? parsed?.status
