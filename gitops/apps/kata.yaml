@@ -11,7 +11,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/elamaran11/eks-platform-openclaw
-    targetRevision: feat/finance-assistant-warmpool-claim
+    targetRevision: HEAD
     path: gitops/helm/kata
   destination:
     server: https://kubernetes.default.svc

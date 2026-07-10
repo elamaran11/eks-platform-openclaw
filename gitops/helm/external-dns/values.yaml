@@ -5,9 +5,9 @@ external-dns:
   # Scoped to the one hosted zone external-dns should touch.
   # Replaced by scripts/render-finance-ui.sh from terraform outputs.
   domainFilters:
-    - advaitt.people.aws.dev
+    - __ROUTE53_ZONE_NAME__
   zoneIdFilters:
-    - Z07667581KDLOA4RSCVFD
+    - __ROUTE53_ZONE_ID__
 
   # Watch Ingresses only (no Services of type LoadBalancer needed).
   sources:
