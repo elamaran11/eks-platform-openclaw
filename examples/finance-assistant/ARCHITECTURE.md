@@ -119,7 +119,7 @@ Call it $25–40/mo incremental on an already-running cluster. If you tear the c
 
 ## Implementation plan
 
-1. **Sandbox + workspace** — new namespace `finance-assistant`, PVC, ConfigMap with system prompt, Sandbox CRD. ([`sandbox.yaml`](./sandbox.yaml), [`system-prompt-configmap.yaml`](./system-prompt-configmap.yaml), [`workspace-pvc.yaml`](./workspace-pvc.yaml))
+1. **Sandbox + workspace** — new namespace `finance-assistant`, shared EFS PVC, ConfigMap with system prompt, and a declarative `SandboxTemplate` + `SandboxWarmPool` (agent-sandbox v0.5.0). ([`sandbox-template.yaml`](./sandbox-template.yaml), [`system-prompt-configmap.yaml`](./system-prompt-configmap.yaml), [`workspace-pvc.yaml`](./workspace-pvc.yaml))
 2. **Guardrail overlay** — Terraform addendum for finance-specific denied topics and PII filters. ([`guardrail-overlay.tf`](./guardrail-overlay.tf))
 3. **NetworkPolicy** — lock egress to LiteLLM only.
 4. **LiteLLM virtual key** — new key with monthly budget cap.

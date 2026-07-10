@@ -1,17 +1,27 @@
-// session-router: one Sandbox + PVC per authenticated Cognito user.
+// session-router: thin shim over the agent-sandbox declarative CRDs.
+//
+// It no longer applies static templated manifests. It owns exactly two
+// jobs:
+//   1. Provisioning — get-or-create ONE SandboxClaim per authenticated
+//      user. The agent-sandbox controller binds the claim to a warm
+//      sandbox (fast) or cold-creates one (empty pool). The claim's
+//      lifecycle handles idle teardown, replacing the reaper CronJob.
+//   2. Proxying — stream the /chat SSE from the bound sandbox's adapter,
+//      passing the user's suffix so the sandbox can route to that user's
+//      per-user openclaw agent + workspace subdir.
 //
 // Flow per /chat request:
-//  1. Read x-amzn-oidc-data (JWT injected by ALB Cognito auth) → sub claim
-//  2. Hash sub → short stable id, used as the per-user suffix
-//  3. Ensure per-user PVC, Sandbox, and Service exist (create lazily)
-//  4. Wait for the Sandbox pod to be Ready (cold-start hidden from UI with
-//     heartbeats on the SSE stream)
-//  5. Proxy the /chat request to that user's finance-sandbox-<id>:18790
-//  6. Touch last-seen annotation so the idle-reaper CronJob leaves it alone
+//  1. Read x-amzn-oidc-data (JWT injected by ALB Cognito auth) -> sub
+//  2. Hash sub -> short stable suffix
+//  3. get-or-create SandboxClaim/finance-claim-<suffix>; renew its sliding
+//     idle lease (lifecycle.shutdownTime = now + IDLE_TTL)
+//  4. Wait for claim.status Ready + sandbox.name; read the bound
+//     Sandbox.status.serviceFQDN
+//  5. Proxy /chat to <serviceFQDN>:18790, injecting the suffix in the body
 //
-// No secrets pass through this process. It holds no LiteLLM key, no
-// Bedrock creds. Its only privileges are the narrow RBAC in k8s/rbac.yaml:
-// CRUD on Sandbox, Service, PVC in the finance-assistant namespace.
+// No secrets pass through this process. Its only privileges are the narrow
+// RBAC in k8s/deployment.yaml: get/list/create/patch/delete SandboxClaim,
+// and get/list Sandbox (to read serviceFQDN) in this namespace.
 
 const http = require("http");
 const crypto = require("crypto");
@@ -19,20 +29,20 @@ const k8s = require("@kubernetes/client-node");
 
 const PORT = parseInt(process.env.PORT || "18790", 10);
 const NAMESPACE = process.env.NAMESPACE || "finance-assistant";
-const SANDBOX_TEMPLATE = process.env.SANDBOX_TEMPLATE || "/etc/router/sandbox-template.json";
-const SANDBOX_READY_TIMEOUT_MS = parseInt(process.env.SANDBOX_READY_TIMEOUT_MS || "60000", 10);
+const WARM_POOL = process.env.WARM_POOL || "finance";
+const SANDBOX_READY_TIMEOUT_MS = parseInt(process.env.SANDBOX_READY_TIMEOUT_MS || "300000", 10);
+// Sliding idle lease. Each message pushes shutdownTime to now + this, so a
+// session is torn down by the controller only after this much silence.
 const IDLE_TTL_SECONDS = parseInt(process.env.IDLE_TTL_SECONDS || "1800", 10);
-// Read-only mode: do NOT provision per-user sandboxes; proxy to the
-// legacy shared sandbox. Phase-4 safety net — lets us smoke-test the
-// router's SSE proxy path before flipping real user traffic to the
-// per-user model.
+// Read-only mode: do NOT provision per-user claims; proxy to the legacy
+// shared sandbox. Smoke-tests the SSE proxy path.
 const READ_ONLY = process.env.ROUTER_READ_ONLY === "true";
 const LEGACY_BACKEND = process.env.LEGACY_BACKEND || "finance-sandbox.finance-assistant.svc.cluster.local";
+const USER_LABEL = "sandbox.users.io/user-suffix";
 
-// ALB verifies the Cognito JWT and signs x-amzn-oidc-data itself before
-// forwarding. In front of this router must be the ALB Cognito auth chain
-// — we rely on that upstream verification. If you relocate this behind a
-// different gateway, add JWKS verification here.
+// ALB verifies the Cognito JWT and signs x-amzn-oidc-data before
+// forwarding. We rely on that upstream verification; if you relocate this
+// behind a different gateway, add JWKS verification here.
 function extractUserSub(req) {
   const oidc = req.headers["x-amzn-oidc-data"];
   if (!oidc) return null;
@@ -54,78 +64,18 @@ function userSuffix(sub) {
 
 const kc = new k8s.KubeConfig();
 kc.loadFromDefault();
-const coreApi = kc.makeApiClient(k8s.CoreV1Api);
 const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
 
+const CLAIM_GROUP = "extensions.agents.x-k8s.io";
+const CLAIM_VERSION = "v1beta1";
+const CLAIM_PLURAL = "sandboxclaims";
 const SANDBOX_GROUP = "agents.x-k8s.io";
-const SANDBOX_VERSION = "v1alpha1";
+const SANDBOX_VERSION = "v1beta1";
 const SANDBOX_PLURAL = "sandboxes";
 
-let sandboxTemplate = null;
-function loadTemplate() {
-  if (sandboxTemplate) return sandboxTemplate;
-  const fs = require("fs");
-  sandboxTemplate = JSON.parse(fs.readFileSync(SANDBOX_TEMPLATE, "utf8"));
-  return sandboxTemplate;
-}
-
-function renderForUser(suffix, sub) {
-  const tpl = JSON.parse(JSON.stringify(loadTemplate()));
-  const name = `finance-sandbox-${suffix}`;
-  const pvcName = `finance-workspace-${suffix}`;
-
-  // Sandbox
-  tpl.sandbox.metadata.name = name;
-  tpl.sandbox.metadata.namespace = NAMESPACE;
-  tpl.sandbox.metadata.labels = {
-    ...(tpl.sandbox.metadata.labels || {}),
-    "finance.x-k8s.io/user-suffix": suffix,
-    app: name,
-  };
-  tpl.sandbox.metadata.annotations = {
-    ...(tpl.sandbox.metadata.annotations || {}),
-    // Only the suffix is stored; sub itself never touches etcd.
-    "finance.x-k8s.io/sub-hash": crypto.createHash("sha256").update(sub).digest("hex").slice(0, 16),
-    "finance.x-k8s.io/last-seen": new Date().toISOString(),
-  };
-  tpl.sandbox.spec.podTemplate.metadata = tpl.sandbox.spec.podTemplate.metadata || {};
-  tpl.sandbox.spec.podTemplate.metadata.labels = {
-    ...(tpl.sandbox.spec.podTemplate.metadata.labels || {}),
-    app: name,
-    "finance.x-k8s.io/user-suffix": suffix,
-  };
-  // Swap the workspace volume from emptyDir → the user's PVC.
-  const volumes = tpl.sandbox.spec.podTemplate.spec.volumes;
-  const ws = volumes.find((v) => v.name === "workspace");
-  if (ws) {
-    delete ws.emptyDir;
-    ws.persistentVolumeClaim = { claimName: pvcName };
-  }
-
-  // PVC
-  tpl.pvc.metadata.name = pvcName;
-  tpl.pvc.metadata.namespace = NAMESPACE;
-  tpl.pvc.metadata.labels = {
-    "finance.x-k8s.io/user-suffix": suffix,
-  };
-
-  // Service — selector on per-user label, so each user gets a dedicated
-  // internal DNS name and one user's pod can't be matched by another's svc.
-  tpl.service.metadata.name = name;
-  tpl.service.metadata.namespace = NAMESPACE;
-  tpl.service.metadata.labels = {
-    "finance.x-k8s.io/user-suffix": suffix,
-    app: name,
-  };
-  tpl.service.spec.selector = { app: name };
-
-  return { name, pvcName, rendered: tpl };
-}
-
-// Retry transient k8s API errors. The kubernetes client raises plain
-// Error("HTTP request failed") for ECONN/EAI/socket-closed — those are
-// retriable. 404 / 409 / 422 are intentional flow-control and must pass
-// through unchanged.
+// Retry transient k8s API errors. The client raises plain
+// Error("HTTP request failed") for ECONN/EAI/socket-closed — retriable.
+// 404 / 409 / 422 are intentional flow-control and pass through unchanged.
 async function withRetry(label, fn, { attempts = 4, baseMs = 500 } = {}) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
@@ -142,124 +92,123 @@ async function withRetry(label, fn, { attempts = 4, baseMs = 500 } = {}) {
   throw lastErr;
 }
 
-async function ensureUserSandbox(suffix, sub) {
-  const { name, pvcName, rendered } = renderForUser(suffix, sub);
+function claimName(suffix) { return `finance-claim-${suffix}`; }
+function leaseTime() { return new Date(Date.now() + IDLE_TTL_SECONDS * 1000).toISOString(); }
 
-  // PVC — created once and kept. The per-user workspace survives pod
-  // restarts but is deleted when the user is de-provisioned.
-  try {
-    await withRetry("PVC get", () => coreApi.readNamespacedPersistentVolumeClaim(pvcName, NAMESPACE));
-  } catch (e) {
-    if (e?.response?.statusCode === 404) {
-      await withRetry("PVC create", () => coreApi.createNamespacedPersistentVolumeClaim(NAMESPACE, rendered.pvc));
-    } else { throw e; }
-  }
+function buildClaim(suffix, sub) {
+  return {
+    apiVersion: `${CLAIM_GROUP}/${CLAIM_VERSION}`,
+    kind: "SandboxClaim",
+    metadata: {
+      name: claimName(suffix),
+      namespace: NAMESPACE,
+      labels: { [USER_LABEL]: suffix, app: "finance-sandbox" },
+      annotations: {
+        // Only the suffix/hash is stored; sub itself never touches etcd.
+        "finance.x-k8s.io/sub-hash": crypto.createHash("sha256").update(sub).digest("hex").slice(0, 16),
+      },
+    },
+    spec: {
+      warmPoolRef: { name: WARM_POOL },
+      // Stamp the per-user label onto the bound (warm) pod — the one claim
+      // field that reaches a warm pod without forcing a cold start. The
+      // NetworkPolicies key on this label.
+      additionalPodMetadata: { labels: { [USER_LABEL]: suffix } },
+      // Idle teardown: the controller deletes the bound Sandbox at
+      // shutdownTime. Default policy is Retain — must set Delete. The
+      // shared EFS state lives outside this lifecycle, so user files
+      // survive teardown.
+      lifecycle: { shutdownPolicy: "Delete", shutdownTime: leaseTime() },
+    },
+  };
+}
 
-  // Sandbox — created lazily. If present, patch last-seen so the reaper
-  // keeps it.
+// get-or-create the user's claim and renew its sliding idle lease.
+async function ensureClaim(suffix, sub) {
+  const name = claimName(suffix);
   try {
-    await withRetry("Sandbox get", () => customApi.getNamespacedCustomObject(
-      SANDBOX_GROUP, SANDBOX_VERSION, NAMESPACE, SANDBOX_PLURAL, name,
+    await withRetry("Claim get", () => customApi.getNamespacedCustomObject(
+      CLAIM_GROUP, CLAIM_VERSION, NAMESPACE, CLAIM_PLURAL, name,
     ));
-    await withRetry("Sandbox patch", () => customApi.patchNamespacedCustomObject(
-      SANDBOX_GROUP, SANDBOX_VERSION, NAMESPACE, SANDBOX_PLURAL, name,
-      { metadata: { annotations: { "finance.x-k8s.io/last-seen": new Date().toISOString() } } },
-      undefined, undefined, undefined,
-      { headers: { "Content-Type": "application/merge-patch+json" } },
-    ));
+    // Exists — renew the lease so an active session isn't reaped.
+    await renewLease(suffix);
   } catch (e) {
     if (e?.response?.statusCode === 404) {
-      await withRetry("Sandbox create", () => customApi.createNamespacedCustomObject(
-        SANDBOX_GROUP, SANDBOX_VERSION, NAMESPACE, SANDBOX_PLURAL, rendered.sandbox,
-      ));
+      try {
+        await withRetry("Claim create", () => customApi.createNamespacedCustomObject(
+          CLAIM_GROUP, CLAIM_VERSION, NAMESPACE, CLAIM_PLURAL, buildClaim(suffix, sub),
+        ));
+      } catch (ce) {
+        // Lost a create race with another replica/tab — the claim now
+        // exists; renew its lease and proceed.
+        if (ce?.response?.statusCode === 409) { await renewLease(suffix); }
+        else { throw ce; }
+      }
     } else { throw e; }
   }
-
-  // Service — so the sandbox gets a per-user DNS name.
-  try {
-    await withRetry("Service get", () => coreApi.readNamespacedService(name, NAMESPACE));
-  } catch (e) {
-    if (e?.response?.statusCode === 404) {
-      await withRetry("Service create", () => coreApi.createNamespacedService(NAMESPACE, rendered.service));
-    } else { throw e; }
-  }
-
   return { name };
 }
 
-async function waitForPodReady(name, deadlineMs) {
+// Push the sliding lease forward. Called on every message.
+async function renewLease(suffix) {
+  await withRetry("Claim lease patch", () => customApi.patchNamespacedCustomObject(
+    CLAIM_GROUP, CLAIM_VERSION, NAMESPACE, CLAIM_PLURAL, claimName(suffix),
+    { spec: { lifecycle: { shutdownPolicy: "Delete", shutdownTime: leaseTime() } } },
+    undefined, undefined, undefined,
+    { headers: { "Content-Type": "application/merge-patch+json" } },
+  ));
+}
+
+function isReady(conditions) {
+  const c = (conditions || []).find((x) => x.type === "Ready");
+  return c?.status === "True";
+}
+
+// Poll the claim until it reports Ready + a bound sandbox name, then read
+// that Sandbox's serviceFQDN (the stable DNS to proxy to).
+async function waitForBoundSandbox(suffix, deadlineMs) {
   const started = Date.now();
+  const name = claimName(suffix);
   while (Date.now() - started < deadlineMs) {
     try {
-      const pods = await coreApi.listNamespacedPod(
-        NAMESPACE, undefined, undefined, undefined, undefined,
-        `app=${name}`,
+      const resp = await customApi.getNamespacedCustomObject(
+        CLAIM_GROUP, CLAIM_VERSION, NAMESPACE, CLAIM_PLURAL, name,
       );
-      const pod = pods.body.items[0];
-      const ready = pod?.status?.conditions?.find((c) => c.type === "Ready");
-      if (ready?.status === "True") return true;
-    } catch {}
+      const status = resp.body?.status || {};
+      const sandboxName = status.sandbox?.name;
+      if (isReady(status.conditions) && sandboxName) {
+        const sb = await customApi.getNamespacedCustomObject(
+          SANDBOX_GROUP, SANDBOX_VERSION, NAMESPACE, SANDBOX_PLURAL, sandboxName,
+        );
+        const fqdn = sb.body?.status?.serviceFQDN;
+        if (fqdn) return { sandboxName, fqdn };
+      }
+    } catch (e) {
+      // 404 on the sandbox is transient (controller still creating the
+      // Service); keep polling until the deadline.
+    }
     await new Promise((r) => setTimeout(r, 750));
   }
-  return false;
+  return null;
 }
 
 function sseWrite(res, data) { res.write(`data: ${JSON.stringify(data)}\n\n`); }
 
-// Per-suffix prime-in-flight map + last-primed-at cache. openclaw's
-// adapter spawns a fresh agent subprocess per /chat and cannot tolerate
-// two concurrent runs against the same sandbox — the second exits 1.
-// So we dedupe: concurrent warmups for the same user share one promise,
-// and the user's real /chat await the same promise before proxying.
-const inflightPrime = new Map();      // suffix -> Promise
-const lastPrimedAt = new Map();       // suffix -> ms epoch
-const PRIME_TTL_MS = 60_000;          // skip re-prime if <60s since last
-
-function runPrime(sandboxName, suffix) {
-  const host = `${sandboxName}.${NAMESPACE}.svc.cluster.local`;
-  const body = JSON.stringify({ message: "ok", sessionId: `prime-${suffix}` });
+// Proxy the SSE /chat stream to the bound sandbox's adapter, injecting the
+// user suffix into the body so the adapter routes to that user's per-user
+// openclaw agent (`openclaw agent --agent pod-agent-<suffix>`).
+async function proxyChat(res, backendHost, suffix, bodyBuf) {
+  // Augment the incoming body with the suffix. The web-ui sends
+  // {message, sessionId}; the adapter now also needs {suffix}.
+  let body = bodyBuf;
+  try {
+    const parsed = JSON.parse(bodyBuf.toString("utf8") || "{}");
+    parsed.suffix = suffix;
+    body = Buffer.from(JSON.stringify(parsed));
+  } catch {
+    // Non-JSON body — forward as-is (adapter will 400).
+  }
   return new Promise((resolve) => {
-    const req = http.request(
-      { host, port: 18790, path: "/chat", method: "POST",
-        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } },
-      (r) => { r.on("data", () => {}); r.on("end", resolve); r.on("error", resolve); },
-    );
-    req.on("error", resolve);
-    req.setTimeout(120000, () => { try { req.destroy(); } catch {} resolve(); });
-    req.write(body); req.end();
-  });
-}
-
-// Fire a throwaway chat at the user's adapter so the gateway pays the
-// per-session init tax (runtime-plugins, model-resolution, auth) before
-// the user asks their real first question. Deduped per-suffix so
-// concurrent warmups don't double-fire and crash the adapter.
-async function primeAgent(sandboxName, suffix) {
-  const lastAt = lastPrimedAt.get(suffix) || 0;
-  if (Date.now() - lastAt < PRIME_TTL_MS) return; // recently primed, skip
-  let p = inflightPrime.get(suffix);
-  if (p) { await p; return; }
-  p = runPrime(sandboxName, suffix)
-    .finally(() => { inflightPrime.delete(suffix); lastPrimedAt.set(suffix, Date.now()); });
-  inflightPrime.set(suffix, p);
-  await p;
-}
-
-// Await any in-flight prime for this suffix before proxying user chat.
-// Returning early if nothing pending keeps the hot path cheap.
-async function waitForNoPrime(suffix) {
-  const p = inflightPrime.get(suffix);
-  if (p) await p;
-}
-
-async function proxyChat(req, res, backendHost, bodyBuf) {
-  return new Promise((resolve) => {
-    // Caller already sent writeHead for the SSE stream and wrote at
-    // least one status frame, so we do NOT touch headers here. We also
-    // take the body as an argument because the outer handler has
-    // already consumed the request stream — reading req again yields
-    // nothing and the adapter hangs waiting for a body.
-    const body = bodyBuf;
     const proxy = http.request(
       {
         host: backendHost, port: 18790, path: "/chat", method: "POST",
@@ -287,10 +236,8 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200); return res.end("ok\n");
   }
 
-  // /warmup — idempotent "ensure sandbox is provisioned and ready" for
-  // this authenticated user. Called from the UI sign-in path so the pod
-  // is up by the time the user asks their first question. No proxy to
-  // the adapter, no chat body required. Returns JSON status.
+  // /warmup — idempotent "ensure the user's sandbox is provisioned and
+  // bound" for the sign-in path, so the pod is ready by first question.
   if (req.method === "POST" && req.url === "/warmup") {
     const sub = extractUserSub(req);
     if (!sub) {
@@ -303,21 +250,14 @@ const server = http.createServer(async (req, res) => {
     }
     const suffix = userSuffix(sub);
     try {
-      const { name } = await ensureUserSandbox(suffix, sub);
-      const ready = await waitForPodReady(name, SANDBOX_READY_TIMEOUT_MS);
-      if (!ready) {
+      await ensureClaim(suffix, sub);
+      const bound = await waitForBoundSandbox(suffix, SANDBOX_READY_TIMEOUT_MS);
+      if (!bound) {
         res.writeHead(504, { "Content-Type": "application/json" });
-        return res.end(JSON.stringify({ status: "timeout", sandbox: name }));
+        return res.end(JSON.stringify({ status: "timeout", claim: claimName(suffix) }));
       }
-      // Pod is ready. We deliberately DO NOT prime the agent runtime
-      // here — priming spawns a subprocess in the adapter that takes
-      // ~18s and blocks any user chat that arrives during that window.
-      // For realistic flows (user types within 30s of login), priming
-      // makes first-chat latency WORSE by forcing the user to wait for
-      // the prime + their own chat sequentially. Better to let the
-      // user's real first question be the one that pays the init cost.
       res.writeHead(200, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ status: "ready", sandbox: name }));
+      return res.end(JSON.stringify({ status: "ready", sandbox: bound.sandboxName }));
     } catch (e) {
       const detail = e?.message || String(e);
       console.error("[router/warmup]", detail);
@@ -333,15 +273,13 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(404); return res.end();
   }
 
-  // Buffer the request body up-front so both extractUserSub() and the
-  // downstream proxy can use it. http.IncomingMessage is a one-shot
-  // readable — reading it twice returns nothing.
+  // Buffer the body up-front so both extractUserSub() and the downstream
+  // proxy can use it. http.IncomingMessage is a one-shot readable.
   const bodyChunks = [];
   for await (const chunk of req) bodyChunks.push(chunk);
   const bodyBuf = Buffer.concat(bodyChunks);
 
-  // Phase-4 smoke test mode: pass-through to the legacy shared sandbox
-  // without provisioning anything.
+  // Smoke-test mode: pass-through to the legacy shared sandbox.
   if (READ_ONLY) {
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -349,7 +287,7 @@ const server = http.createServer(async (req, res) => {
       "Connection": "keep-alive",
       "X-Accel-Buffering": "no",
     });
-    await proxyChat(req, res, LEGACY_BACKEND, bodyBuf);
+    await proxyChat(res, LEGACY_BACKEND, "legacy", bodyBuf);
     return;
   }
 
@@ -370,27 +308,20 @@ const server = http.createServer(async (req, res) => {
 
   try {
     sseWrite(res, { status: "provisioning" });
-    const { name } = await ensureUserSandbox(suffix, sub);
-    const ready = await waitForPodReady(name, SANDBOX_READY_TIMEOUT_MS);
-    if (!ready) {
+    await ensureClaim(suffix, sub);
+    const bound = await waitForBoundSandbox(suffix, SANDBOX_READY_TIMEOUT_MS);
+    if (!bound) {
       clearInterval(heartbeat);
       sseWrite(res, { error: "sandbox not ready within timeout" });
       res.write("data: [DONE]\n\n"); return res.end();
     }
-    // If a prime is running right now (warmup fired + user typed fast),
-    // await it so we don't spawn two concurrent openclaw runs against
-    // the same adapter — it can't handle that and exits 1.
-    await waitForNoPrime(suffix);
     sseWrite(res, { status: "ready" });
     clearInterval(heartbeat);
-    const backend = `${name}.${NAMESPACE}.svc.cluster.local`;
-    await proxyChat(req, res, backend, bodyBuf);
+    await proxyChat(res, bound.fqdn, suffix, bodyBuf);
   } catch (e) {
     clearInterval(heartbeat);
     const detail = e?.message || String(e);
     console.error("[router]", detail);
-    // Friendlier message — the raw k8s client error "HTTP request failed"
-    // is useless to the user. Map known cases.
     const friendly = /HTTP request failed|ECONN|ETIMEDOUT|EAI_AGAIN/i.test(detail)
       ? "Could not reach your workspace — please retry in a moment."
       : `Could not start your session: ${detail}`;
@@ -402,5 +333,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`[router] listening on :${PORT} (ns=${NAMESPACE}, idle_ttl=${IDLE_TTL_SECONDS}s)`);
+  console.log(`[router] listening on :${PORT} (ns=${NAMESPACE}, pool=${WARM_POOL}, idle_ttl=${IDLE_TTL_SECONDS}s)`);
 });

@@ -30,7 +30,7 @@
 | 1 | kata-deploy, kata-deploy-fc, monitoring | qemu+clh runtime install (kata-deploy) and firecracker runtime install (kata-deploy-fc), each with its own kata-readiness startup-taint gate; Prometheus/Grafana |
 | 2 | litellm | OpenAI-compat proxy to Bedrock with Guardrails + sitecustomize |
 | 3 | openclaw, external-dns, ingressclass-alb | Operator (if any), DNS, ALB IngressClass |
-| 4 | finance-assistant, slack | Sandbox CRs + NetworkPolicies + ConfigMaps + session-router |
+| 4 | finance-assistant, slack | SandboxTemplate + SandboxWarmPool + shared EFS PVC + NetworkPolicies + ConfigMaps + session-router |
 | 5 | finance-assistant-ui | React UI + ALB Ingress + Cognito |
 
 ArgoCD reconciles in wave order. Within a wave, Applications sync in parallel.
@@ -47,9 +47,10 @@ Browser ──HTTPS──▶ ALB ──HTTP──▶ finance-ui (Next.js)
                                    ▼
                             finance-session-router
                                    │ hash(sub) → user-suffix
-                                   │ kubectl ensure PVC+Sandbox+Service (with retry)
+                                   │ get-or-create SandboxClaim (warm-bind, with retry)
+                                   │ read bound Sandbox.status.serviceFQDN
                                    ▼
-                       finance-sandbox-<suffix>
+                       warm-bound sandbox (SandboxWarmPool)
                        ┌─────────────────────────┐
                        │ openclaw (:18789)       │
                        │    ▲ loopback           │
@@ -73,9 +74,12 @@ pod is provisioned in the background while the user is deciding what to ask.
 Three @amazon.com fences: Cognito pre-signup Lambda, client-side domain
 check, server-side check in /api/warmup.
 
-/workspace mounts from EFS subPath=<user-suffix>. Reaper deletes Sandbox
-after 30m idle; EFS data persists; next sign-in triggers warmup → Sandbox
-re-mounts the same subPath.
+Per-user state: a shared RWX EFS volume is mounted at /workspace in every
+sandbox; the adapter provisions a dedicated openclaw agent rooted at
+/workspace/users/<suffix> on first use. The SandboxClaim's sliding lifecycle
+lease deletes the bound Sandbox after 30m idle (no reaper CronJob); EFS data
+lives outside the lifecycle and persists, so the next sign-in re-provisions
+the agent onto the same subdir.
 ```
 
 ### Slack

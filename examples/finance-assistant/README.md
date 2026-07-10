@@ -6,7 +6,7 @@ A read-only, privacy-first financial coach that runs inside a Kata QEMU VM on EK
 
 ![Finance Assistant Flow](../../generated-diagrams/finance-assistant-flow.png)
 
-A web browser signs in via Amazon Cognito (gated to `@amazon.com` addresses by a pre-signup Lambda). The Next.js UI (`finance-ui`) sets a short HttpOnly session cookie, then fires `/api/warmup` so a per-user Kata QEMU VM is provisioned in the background while the user is still deciding what to ask. A `session-router` pod ensures a PVC + `Sandbox` CR + Service exist for every authenticated Cognito `sub`. Karpenter provisions the Kata node on demand (nested-virt `c8i`/`m8i`, or bare-metal fallback) using the stock AL2023 AMI; the kata-deploy DaemonSet installs the Kata runtime at boot. Once the sandbox is up, `/api/chat` streams SSE through the router into the sandbox's adapter sidecar, which forwards to the `openclaw` gateway on `:18789`. The gateway calls LiteLLM, which routes to Bedrock Guardrail + Claude (Opus 4.6 primary, Haiku 4.5 fallback) via Pod Identity — no static keys. Per-user `/workspace` lives on EFS and survives the reaper CronJob's 30-minute idle-evictions, so chat history and workspace files come back instantly on next sign-in.
+A web browser signs in via Amazon Cognito (gated to `@amazon.com` addresses by a pre-signup Lambda). The Next.js UI (`finance-ui`) sets a short HttpOnly session cookie, then fires `/api/warmup` so a per-user Kata QEMU VM is bound in the background while the user is still deciding what to ask. A thin `session-router` pod creates one declarative `SandboxClaim` per authenticated Cognito `sub`; the agent-sandbox controller binds it to a pre-warmed sandbox from a `SandboxWarmPool` (fast) or cold-creates one (empty pool). Karpenter provisions the Kata node on demand (nested-virt `c8i`/`m8i`, or bare-metal fallback) using the stock AL2023 AMI; the kata-deploy DaemonSet installs the Kata runtime at boot. Once the sandbox is bound, `/api/chat` streams SSE through the router into the sandbox's adapter sidecar, which forwards to the `openclaw` gateway on `:18789`. The gateway calls LiteLLM, which routes to Bedrock Guardrail + Claude (Opus 4.6 primary, Haiku 4.5 fallback) via Pod Identity — no static keys. Per-user state lives in a `/workspace/users/<suffix>` subdir on a shared EFS volume (each user gets a dedicated openclaw agent rooted there, provisioned by the adapter on first use); it lives outside the claim lifecycle, so chat workspace files come back instantly on next sign-in. Idle sessions are torn down by the claim's sliding lifecycle lease (30 min), not a reaper CronJob.
 
 Three separate fences keep non-`@amazon.com` accounts from ever provisioning a Kata pod: (1) the Cognito pre-signup Lambda rejects signups outright, (2) the UI won't fire `/api/warmup` unless the email ends with `@amazon.com`, (3) `/api/warmup` re-checks server-side before calling the router — defending against a forged or replayed session cookie.
 
@@ -197,7 +197,7 @@ curl -sk -X POST https://<finance_ui_host>/api/auth/signup \
 #  → {"error":"Signup is restricted to @amazon.com email addresses...","code":"UserLambdaValidationException"}
 
 # 3. Your per-user sandbox exists
-kubectl -n finance-assistant get sandbox.agents.x-k8s.io -l finance.x-k8s.io/user-suffix
+kubectl -n finance-assistant get sandbox.agents.x-k8s.io -l sandbox.users.io/user-suffix
 ```
 
 ### Three @amazon.com fences
@@ -213,18 +213,35 @@ kubectl -n finance-assistant get sandbox.agents.x-k8s.io -l finance.x-k8s.io/use
 **Change the system prompt** — edit `system-prompt-configmap.yaml`, commit, push. For existing users to pick it up, evict their sandboxes so they re-provision with the new ConfigMap mounted:
 
 ```bash
-kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l finance.x-k8s.io/user-suffix
+kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l sandbox.users.io/user-suffix
 ```
 
 EFS workspaces survive the eviction; chat history resumes on the next sign-in.
 
-**Switch the default model** — edit `session-router/sandbox-template-configmap.yaml`; the `agents.defaults.model.primary` value inside the gateway container command (`litellm/claude-haiku-4-5` → `litellm/claude-opus-4-6` etc.). Apply + restart the router + evict sandboxes:
+**Switch the default model** — edit `sandbox-template.yaml`; the `agents.defaults.model.primary` value inside the openclaw container command (`litellm/claude-opus-4-6` → `litellm/claude-haiku-4-5` etc.). Apply + evict bound sandboxes so the warm pool rebuilds on the new spec:
 
 ```bash
-kubectl apply -f examples/finance-assistant/session-router/sandbox-template-configmap.yaml
-kubectl -n finance-assistant rollout restart deploy/finance-session-router
-kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l finance.x-k8s.io/user-suffix
+kubectl apply -f examples/finance-assistant/sandbox-template.yaml
+kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l sandbox.users.io/user-suffix
 ```
+
+**Switch the Kata VMM (RuntimeClass)** — the `SandboxTemplate` in `sandbox-template.yaml` pins `spec.podTemplate.spec.runtimeClassName: kata-qemu` (the default) with `nodeSelector.node-type: kata-nested`. Three RuntimeClasses ship with the platform (created by `gitops/helm/kata`): `kata-qemu` (QEMU, default), `kata-clh` (Cloud Hypervisor), and `kata-fc` (Firecracker). **The RuntimeClass and the `node-type` nodeSelector must be changed together** — each VMM only boots on the matching Karpenter pool:
+
+| `runtimeClassName` | VMM | Required `node-type` | Notes |
+|---|---|---|---|
+| `kata-qemu` (default) | QEMU | `kata-nested` or `kata-metal` | Widest device support; the default. |
+| `kata-clh` | Cloud Hypervisor | `kata-nested` or `kata-metal` | Same pools as QEMU; leaner VMM, faster boot. |
+| `kata-fc` | Firecracker | `kata-fc` or `kata-fc-metal` | **Requires the devmapper pools** — will NOT schedule on the nested/metal pools. |
+
+Edit both fields in `sandbox-template.yaml`, then apply + evict so the warm pool rebuilds on the new spec:
+
+```bash
+# e.g. switch to Firecracker: set runtimeClassName: kata-fc AND node-type: kata-fc
+kubectl apply -f examples/finance-assistant/sandbox-template.yaml
+kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l sandbox.users.io/user-suffix
+```
+
+See the [VMM startup benchmark](../../README.md#vmm-startup-benchmark) in the top-level README for how the three compare.
 
 **Teardown just the finance-assistant app** (leave the rest of the platform up):
 
@@ -243,7 +260,7 @@ The Cognito user pool, Bedrock Guardrail, and LiteLLM persist (terraform-managed
 | Valid signin → `/chat` bounces back to `/#signin` in a loop | Cookie >4KB, Chromium silently drops it | `lib/set-session.ts` must only put `{sub, email}` in the JWT, never `id_token`/`refresh_token` |
 | "⚠️ HTTP request failed" banner on first question | Router k8s API blip during provisioning | Router has `withRetry` around k8s calls (4× exp backoff). If this still happens, check `kubectl logs -n finance-assistant deploy/finance-session-router` for the underlying error and file an issue |
 | Every turn takes 75–95s | openclaw image is on a pre-2026.5.0 tag | Check `kubectl -n finance-assistant get sandbox.agents.x-k8s.io -o yaml \| grep image:` — pin to `ghcr.io/openclaw/openclaw:2026.5.2` or newer. Never use `:latest` |
-| Agent greets every turn with "I just came online, who am I?" | Bootstrap files seeding identity from workspace | `sandbox-template-configmap.yaml` gateway command must remove BOOT.md + openclaw identity files, and `openclaw.json` must have `agents.defaults.skipBootstrap: true` |
+| Agent greets every turn with "I just came online, who am I?" | Bootstrap files seeding identity from workspace | `sandbox-template.yaml` openclaw container command must set `agents.defaults.skipBootstrap: true` in `openclaw.json` |
 | Agent says "your workspace is empty" on generic questions | System prompt told it to read workspace every turn | `system-prompt-configmap.yaml` "How you work" section must say "do NOT read workspace files unless the user references their own situation" |
 
 ## Files in this directory
@@ -252,11 +269,11 @@ The Cognito user pool, Bedrock Guardrail, and LiteLLM persist (terraform-managed
 |---|---|
 | `README.md` | This document |
 | `ARCHITECTURE.md` | Deployment sketch, UI recommendation, integration points |
-| `sandbox.yaml` | The Sandbox CRD that launches the agent |
+| `sandbox-template.yaml` | SA + `SandboxTemplate` + `SandboxWarmPool` + shared EFS PVC (declarative provisioning) |
 | `system-prompt-configmap.yaml` | Persona and behavioral constraints |
 | `guardrail-overlay.tf` | Bedrock Guardrail additions for finance topics |
 | `web-ui/` | Next.js UI, ALB Ingress, Cognito wiring |
-| `workspace-pvc.yaml` | Encrypted PVC for durable memory |
+| `workspace-pvc.yaml` | Namespace definition (per-user state now lives on the shared EFS volume) |
 
 ## Disclaimers
 

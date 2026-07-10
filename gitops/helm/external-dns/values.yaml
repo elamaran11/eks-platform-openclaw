@@ -5,9 +5,9 @@ external-dns:
   # Scoped to the one hosted zone external-dns should touch.
   # Replaced by scripts/render-finance-ui.sh from terraform outputs.
   domainFilters:
-    - elamaras.people.aws.dev
+    - advaitt.people.aws.dev
   zoneIdFilters:
-    - Z03804463VDEET6154SUK
+    - Z07667581KDLOA4RSCVFD
 
   # Watch Ingresses only (no Services of type LoadBalancer needed).
   sources:

@@ -6,7 +6,7 @@ metadata:
 spec:
   podSelector:
     matchExpressions:
-      - { key: finance.x-k8s.io/user-suffix, operator: Exists }
+      - { key: sandbox.users.io/user-suffix, operator: Exists }
   policyTypes: [Egress]
   egress:
     - to:
@@ -43,7 +43,7 @@ metadata:
 spec:
   podSelector:
     matchExpressions:
-      - { key: finance.x-k8s.io/user-suffix, operator: Exists }
+      - { key: sandbox.users.io/user-suffix, operator: Exists }
   policyTypes: [Ingress]
   ingress:
     - from:
@@ -70,7 +70,7 @@ spec:
     - to:
         - podSelector:
             matchExpressions:
-              - { key: finance.x-k8s.io/user-suffix, operator: Exists }
+              - { key: sandbox.users.io/user-suffix, operator: Exists }
       ports:
         - port: 18790
           protocol: TCP

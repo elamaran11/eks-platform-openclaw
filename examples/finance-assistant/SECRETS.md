@@ -14,7 +14,7 @@ PR4 changes the design so that kind of prompt cannot leak credentials.
 
 | Change | File | Why |
 |---|---|---|
-| Secrets mounted as tmpfs files (mode 0400), not env vars | `examples/finance-assistant/sandbox.yaml` + `session-router/sandbox-template-configmap.yaml` | `env` dumps return nothing. Files are `ReadOnly` projected volumes on tmpfs — not on disk. |
+| Secrets mounted as tmpfs files (mode 0400), not env vars | `examples/finance-assistant/sandbox-template.yaml` | `env` dumps return nothing. Files are `ReadOnly` projected volumes on tmpfs — not on disk. |
 | Env-strip after read | `adapter/server.js`, `adapter-configmap.yaml`, sandbox shell wrapper | Values live only long enough to render the openclaw config, then `unset` / `delete process.env.X` so child processes can't inherit them. |
 | `log-redact` scrubs stdout/stderr | `adapter/log-redact.js` + inline in `adapter-configmap.yaml` | Catches any leak that slips past the other defenses. Patterns: `sk-*`, `AKIA/ASIA*`, JWTs, long hex tokens. |
 | IRSA for Bedrock (already in place) | `terraform/iam.tf` → `aws_eks_pod_identity_association.litellm` | LiteLLM → Bedrock uses pod-identity; no AWS creds in env at any point. |
@@ -43,7 +43,7 @@ When a secret is (or might be) leaked:
    kubectl -n finance-assistant patch secret openclaw-gateway-auth \
      --type merge -p "{\"stringData\":{\"token\":\"$NEW_TOKEN\"}}"
    kubectl -n finance-assistant rollout restart deploy/finance-session-router
-   kubectl -n finance-assistant delete sandbox -l finance.x-k8s.io/user-suffix
+   kubectl -n finance-assistant delete sandbox -l sandbox.users.io/user-suffix
    ```
 
 3. **Purge logs.**
