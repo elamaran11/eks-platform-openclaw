@@ -148,7 +148,7 @@ spec:
               # Render openclaw.json with json.dump so the system prompt and
               # secrets are always correctly escaped (never string-substituted).
               # Spread across lines for readability; the output is unchanged.
-              python3 -c '
+              LITELLM_API_KEY="${LITELLM_API_KEY}" GATEWAY_AUTH_TOKEN="${GATEWAY_AUTH_TOKEN}" python3 -c '
               import json, os
 
               prompt = open("/etc/openclaw/system-prompt.md").read()
