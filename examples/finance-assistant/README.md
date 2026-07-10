@@ -225,6 +225,24 @@ kubectl apply -f examples/finance-assistant/sandbox-template.yaml
 kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l sandbox.users.io/user-suffix
 ```
 
+**Switch the Kata VMM (RuntimeClass)** — the `SandboxTemplate` in `sandbox-template.yaml` pins `spec.podTemplate.spec.runtimeClassName: kata-qemu` (the default) with `nodeSelector.node-type: kata-nested`. Three RuntimeClasses ship with the platform (created by `gitops/helm/kata`): `kata-qemu` (QEMU, default), `kata-clh` (Cloud Hypervisor), and `kata-fc` (Firecracker). **The RuntimeClass and the `node-type` nodeSelector must be changed together** — each VMM only boots on the matching Karpenter pool:
+
+| `runtimeClassName` | VMM | Required `node-type` | Notes |
+|---|---|---|---|
+| `kata-qemu` (default) | QEMU | `kata-nested` or `kata-metal` | Widest device support; the default. |
+| `kata-clh` | Cloud Hypervisor | `kata-nested` or `kata-metal` | Same pools as QEMU; leaner VMM, faster boot. |
+| `kata-fc` | Firecracker | `kata-fc` or `kata-fc-metal` | **Requires the devmapper pools** — will NOT schedule on the nested/metal pools. |
+
+Edit both fields in `sandbox-template.yaml`, then apply + evict so the warm pool rebuilds on the new spec:
+
+```bash
+# e.g. switch to Firecracker: set runtimeClassName: kata-fc AND node-type: kata-fc
+kubectl apply -f examples/finance-assistant/sandbox-template.yaml
+kubectl -n finance-assistant delete sandbox.agents.x-k8s.io -l sandbox.users.io/user-suffix
+```
+
+See the [VMM startup benchmark](../../README.md#vmm-startup-benchmark) in the top-level README for how the three compare.
+
 **Teardown just the finance-assistant app** (leave the rest of the platform up):
 
 ```bash
